@@ -35,3 +35,8 @@ constexpr uint8_t LED0_PIN = 0;
 constexpr uint8_t LED1_PIN = 1;
 constexpr uint8_t LED2_PIN = 2;
 constexpr uint8_t LED3_PIN = 3;
+
+//Servo pins
+constexpr uint8_t SERVO_ENABLE_PIN = 30;
+constexpr uint8_t SERVO_A_PWM = 29;
+constexpr uint8_t SERVO_B_PWM = 28;

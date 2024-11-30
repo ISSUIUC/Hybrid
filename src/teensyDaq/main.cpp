@@ -1,4 +1,5 @@
 #include<Arduino.h>
+#include<Servo.h>
 #include<pins.h>
 
 class AnalogInput {
@@ -67,18 +68,22 @@ AnalogInput sense_pt_2(SENSE_P0_PIN, 5000, 1000);
 AnalogInput sense_pt_3(SENSE_P0_PIN, 5000, 1000);
 Pyro pyro_a(ARM_PYROA_PIN, FIRE_PYROA_PIN, sense_pyro_a);
 Pyro pyro_b(ARM_PYROB_PIN, FIRE_PYROB_PIN, sense_pyro_b);
+Servo servo_a;
+Servo servo_b;
 
 void setup() {
     Serial.begin(115200);
+    while(!Serial);
     pinMode(LED0_PIN, OUTPUT);
     pinMode(LED1_PIN, OUTPUT);
     pinMode(LED2_PIN, OUTPUT);
     pinMode(LED3_PIN, OUTPUT);
+    pinMode(SERVO_ENABLE_PIN, OUTPUT);
+    servo_a.attach(SERVO_A_PWM);
+    servo_b.attach(SERVO_B_PWM);
 }
 
 void loop() {
-    static int i = 0;
-    i++;
     float v9 = sense_9v.read();
     float v5 = sense_5v.read();
     float vbatt = sense_batt.read();
@@ -89,18 +94,37 @@ void loop() {
     digitalWrite(LED0_PIN, batt_good);
     digitalWrite(LED1_PIN, v9_good);
     digitalWrite(LED2_PIN, v5_good);
-    digitalWrite(LED3_PIN, (i/8)%2);
-    Serial.println(v9);
-    delay(1000);
-    pyro_a.arm();
-    pyro_a.fire();
-    Serial.print(sense_pyro_a.read());
-    Serial.print(" ");
-    Serial.println(sense_pyro_b.read());
-    delay(1000);
-    pyro_a.unfire();
-    pyro_a.disarm();
-    Serial.print(sense_pyro_a.read());
-    Serial.print(" ");
-    Serial.println(sense_pyro_b.read());
+    digitalWrite(LED3_PIN, true);
+
+    if(Serial.available()) {
+        int v = Serial.read();
+        if(v == 'a') {
+            servo_a.write(0);
+            servo_b.write(0);
+            Serial.println("0");
+        } else if(v == 'b'){
+            servo_a.write(180);
+            servo_b.write(180);
+            Serial.println("180");
+        } else if(v =='o'){
+            digitalWrite(SERVO_ENABLE_PIN, HIGH);
+            Serial.println("ON");
+        } else if(v =='f'){
+            digitalWrite(SERVO_ENABLE_PIN, LOW);
+            Serial.println("OFF");
+        }
+    }
+    // Serial.println(v9);
+    // delay(1000);
+    // pyro_a.arm();
+    // pyro_a.fire();
+    // Serial.print(sense_pyro_a.read());
+    // Serial.print(" ");
+    // Serial.println(sense_pyro_b.read());
+    // delay(1000);
+    // pyro_a.unfire();
+    // pyro_a.disarm();
+    // Serial.print(sense_pyro_a.read());
+    // Serial.print(" ");
+    // Serial.println(sense_pyro_b.read());
 }

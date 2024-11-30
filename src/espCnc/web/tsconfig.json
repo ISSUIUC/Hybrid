@@ -1,0 +1,9 @@
+{
+    "compilerOptions": {
+      "lib": ["ES2022", "dom"],
+      "target": "es2022",
+      "module": "NodeNext",
+      "moduleResolution": "nodenext"
+    }
+}
+  

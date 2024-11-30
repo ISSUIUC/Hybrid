@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP CNC</title>
+    <style>
+        body {
+            display: grid;
+            grid-template-rows: 1fr;
+            grid-template-columns: 1fr 1fr 3fr;
+            width: 100vw;
+            height: 100vh;
+            padding: 10px;
+            overflow: hidden;
+        }
+        canvas {
+            background-color: lightgray;
+            width: 100%;
+            height: 50%;
+        }
+    </style>
+</head>
+<body>
+    <div id="cnc0">
+        <textarea id="code_input0" style="height: 50vh;"></textarea>
+        <input type="button" value="go" id="go_button0">
+        <input type="button" value="ESTOP" id="estop0">
+    </div>
+    <div id="cnc1">
+        <textarea id="code_input1" style="height: 50vh;"></textarea>
+        <input type="button" value="go" id="go_button1">
+        <input type="button" value="ESTOP" id="estop1">
+    </div>
+    <div id="draw">
+        <canvas id="canvas"></canvas>
+        <input type="button" value="go" id="canvas_go">
+    </div>
+    <script src="bundle.js"></script>
+</body>
+</html>
