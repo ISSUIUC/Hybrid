@@ -30,31 +30,19 @@ public:
     Queue(const Queue&) = delete;
     Queue(Queue&&) = delete;
 
-    /**
-     * @brief Put a value in the queue. If the queue is full or timed out, do nothing.
-     *
-     * @param value The value to put in the queue.
-     */
     bool send(T value) {
         return xQueueSendToBack(queue, &value, 0) == pdTRUE;
     }
 
-    /**
-     * @brief Put a value in the front of the queue.
-     * 
-     * @param value The value to put in the queue.
-     */
-    bool send_front(T value) {
-        return xQueueSendToFront(queue, &value, 0) == pdTRUE;
+    bool send_wait(T value) {
+        return xQueueSendToBack(queue, &value, portMAX_DELAY) == pdTRUE;
     }
 
-    /**
-     * @brief Fetch a value from the queue.
-     *
-     * @param out Where to put the value from the queue. It is undefined if there is no value in the queue, or if the queue timed out.
-     * @return True if there was a value in the queue that was read into `out`, false otherwise.
-     */
     bool receive(T* out) {
         return xQueueReceive(queue, out, 0) == pdTRUE;
+    }
+
+    bool receive_wait(T* out) {
+        return xQueueReceive(queue, out, portMAX_DELAY) == pdTRUE;
     }
 };

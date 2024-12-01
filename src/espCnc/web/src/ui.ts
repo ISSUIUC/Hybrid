@@ -1,4 +1,4 @@
-import { StopNowCommand, SpeedCommand, MoveCommand, StartCommand, StopCommand, EnableCommand, WaitCommand, MicrostepsCommand, ZeroCommand, MusicCommand, StealthChopCommand, CoolStepCommand, MusicModeCommand, XYCommand, LineCommand, CircleCommand, Command, MultiCommmand, StatusCommand, SetupCommand } from "./commands";
+import { StopNowCommand, SpeedCommand, MoveCommand, StartCommand, StopCommand, EnableCommand, WaitCommand, MicrostepsCommand, ZeroCommand, StealthChopCommand, CoolStepCommand, XYCommand, LineCommand, CircleCommand, Command, MultiCommmand, StatusCommand, SetupCommand, concat, TimedMoveCommand } from "./commands";
 import { angle_to_coord, coord_to_angle } from "./projection";
 
 
@@ -9,7 +9,7 @@ function assert_len<T>(arr: Array<T>, len: number) {
 function parse_command(cmd: string[]) : Command {
     if(cmd[0] == "speed") {
         assert_len(cmd, 2);
-        return new SpeedCommand(eval(cmd[1]));
+        return new SpeedCommand((0,eval)(cmd[1]));
     } else if(cmd[0] == "move") {
         assert_len(cmd, 5);
         let nums = cmd.slice(1).map(eval)
@@ -34,8 +34,6 @@ function parse_command(cmd: string[]) : Command {
     } else if(cmd[0] == "zero") {
         assert_len(cmd, 1);
         return new ZeroCommand();
-    } else if(cmd[0] == "note") {
-        return new MusicCommand(cmd[1], Number(cmd[2]));
     } else if(cmd[0] == "stealth") {
         assert_len(cmd, 5);
         let nums = cmd.slice(1).map(Number)
@@ -44,9 +42,6 @@ function parse_command(cmd: string[]) : Command {
         assert_len(cmd, 5);
         let nums = cmd.slice(1).map(Number)
         return new CoolStepCommand([nums[0], nums[1], nums[2], nums[3]]);
-    } else if(cmd[0] == "musicmode") {
-        assert_len(cmd, 1);
-        return new MusicModeCommand();
     } else if(cmd[0] == "xy") {
         assert_len(cmd, 3);
         let nums = cmd.slice(1).map(Number)
@@ -65,10 +60,24 @@ function parse_command(cmd: string[]) : Command {
     } else if(cmd[0] == "setup") {
         assert_len(cmd, 1);
         return new SetupCommand();
+    } else if(cmd[0] == "test") {
+        return test_timing();
     } else {
         throw new Error("unknown " + cmd.toString());
     }
 }
+
+function test_timing(): Command {
+    let steps = new Uint8Array(1000000);
+    let h = 0;
+    for(let i = 0; i < 1000; i++) {
+        steps[h] = 0x4;
+        h += 100;
+    }
+    console.log(h);
+    return new TimedMoveCommand(steps);
+}
+
 function apply_macro(macro: string[], stack: Command[]) {
     if(macro[0] == "#repeat") {
         assert_len(macro, 2);
@@ -83,8 +92,9 @@ export class UI {
     go_button: HTMLButtonElement;
     estop: HTMLButtonElement;
     code: HTMLTextAreaElement;
+    status: HTMLDivElement;
     waitin_promises: {n: number, res: ()=>void}[] = [];
-    constructor(ws_url: string, go_id: string, estop_id: string, code_id: string){
+    constructor(ws_url: string, go_id: string, estop_id: string, code_id: string, status_id: string){
         this.ws = new WebSocket(ws_url);
         this.ws.onmessage = (ev=>{
             let s = window.atob(ev.data);
@@ -100,15 +110,20 @@ export class UI {
         this.code = document.getElementById(code_id) as HTMLTextAreaElement;
         this.go_button = document.getElementById(go_id) as HTMLButtonElement;
         this.estop = document.getElementById(estop_id) as HTMLButtonElement;
+        this.status = document.getElementById(status_id) as HTMLDivElement;
 
         this.ws.onopen = ()=>{
             console.log("WS opened");
+            this.status.innerHTML = "CONNECTED";
         }
         this.ws.onclose = ()=>{
             console.log("WS closed");
+            this.status.innerHTML = "DISCONNECTED";
         }
-        this.ws.onerror = console.log;
-        
+        this.ws.onerror = e=>{
+            console.log(e);
+            this.status.innerHTML = "ERROR";
+        }
         this.estop.addEventListener("click", ()=>{
             this.ws.send(new Uint32Array(new StopNowCommand().encode()));
         });
@@ -118,11 +133,13 @@ export class UI {
     }
 
     execute(cmds: Command[]) {
-        const binary = new Int32Array(cmds.flatMap(x=>x.encode()));
+        const binary = concat(cmds.flatMap(x=>x.encode()))
+        console.log(binary);
         this.ws.send(binary);
     }
 
     #new_status(status_index: number) {
+        this.status.innerHTML = status_index+"";
         this.waitin_promises = this.waitin_promises.filter(x=>{
             let {n,res} = x;
             if(n == status_index) {

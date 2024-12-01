@@ -1,4 +1,6 @@
 #include"wireless.h"
+
+#ifdef DOWIFI
 #include"b64.h"
 
 #include "web/index_string.h"
@@ -11,8 +13,9 @@ void WirelessServer::handle_ws_message(void *arg, uint8_t *data, size_t len, siz
         return;
     }
 
-    if(info->len > cmd_buffer_size && info->index == 0) {
+    if(info->len > cmd_buffer_size) {
         Serial.println("Err too large msg");
+        return;
     }
 
     if(info->len <= cmd_buffer_size) {
@@ -92,3 +95,4 @@ bool WirelessServer::setup_wifi(const char * ssid, const char * password) {
     xTaskCreatePinnedToCore(periodicManager, "periodics", 8192*2, this, 1, nullptr, 1);
     return true;
 }
+#endif

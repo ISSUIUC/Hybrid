@@ -59,41 +59,58 @@
     SetStepDir: 7,
     SetSpeed: 8,
     Wait: 9,
-    Zero: 10,
+    ZeroPosition: 10,
     StealthChop: 11,
     CoolStep: 12,
-    Status: 13
+    SetStatus: 13,
+    NewTimingReference: 14,
+    Timed: 15
   };
+  function concat(buffs) {
+    const len = buffs.reduce((a, b) => a + b.length, 0);
+    const together = new Uint8Array(len);
+    let head = 0;
+    for (const buff of buffs) {
+      together.set(buff, head);
+      head += buff.length;
+    }
+    return together;
+  }
+  function u32_from_array(arr) {
+    return new Uint8Array(new Uint32Array(arr).buffer);
+  }
   var StopNowCommand = class {
     constructor() {
     }
     encode() {
-      return [CMD_TYPES.StopNow, 0, 0, 0, 0];
+      return u32_from_array([CMD_TYPES.StopNow, 0, 0, 0, 0]);
     }
   };
   var StartCommand = class {
     constructor() {
     }
     encode() {
-      return [CMD_TYPES.StartAll, 0, 0, 0, 0];
+      return u32_from_array([CMD_TYPES.StartAll, 0, 0, 0, 0]);
     }
   };
   var SetupCommand = class {
     constructor() {
     }
     encode() {
-      return [
-        ...new MicrostepsCommand([256, 256, 256, 256]).encode(),
-        ...new StealthChopCommand([1, 1, 1, 1]).encode(),
-        ...new CoolStepCommand([1, 1, 1, 1]).encode()
-      ];
+      return new MultiCommmand([
+        new StartCommand(),
+        new MicrostepsCommand([256, 256, 256, 256]),
+        new StealthChopCommand([1, 1, 1, 1]),
+        new CoolStepCommand([1, 1, 1, 1]),
+        new EnableCommand([1, 1, 1, 1])
+      ]).encode();
     }
   };
   var StopCommand = class {
     constructor() {
     }
     encode() {
-      return [CMD_TYPES.StopAll, 0, 0, 0, 0];
+      return u32_from_array([CMD_TYPES.StopAll, 0, 0, 0, 0]);
     }
   };
   var SpeedCommand = class {
@@ -101,7 +118,7 @@
       this.delay_us = delay_us;
     }
     encode() {
-      return [CMD_TYPES.SetSpeed, this.delay_us, 0, 0, 0];
+      return u32_from_array([CMD_TYPES.SetSpeed, this.delay_us, 0, 0, 0]);
     }
   };
   var MoveCommand = class {
@@ -109,7 +126,7 @@
       this.positions = positions;
     }
     encode() {
-      return [CMD_TYPES.MoveTo, ...this.positions];
+      return u32_from_array([CMD_TYPES.MoveTo, ...this.positions]);
     }
   };
   var EnableCommand = class {
@@ -117,7 +134,7 @@
       this.enables = enables;
     }
     encode() {
-      return [CMD_TYPES.Enable, ...this.enables];
+      return u32_from_array([CMD_TYPES.Enable, ...this.enables]);
     }
   };
   var WaitCommand = class {
@@ -125,7 +142,7 @@
       this.delay_us = delay_us;
     }
     encode() {
-      return [CMD_TYPES.Wait, this.delay_us, 0, 0, 0];
+      return u32_from_array([CMD_TYPES.Wait, this.delay_us, 0, 0, 0]);
     }
   };
   var MicrostepsCommand = class {
@@ -133,14 +150,14 @@
       this.microsteps = microsteps;
     }
     encode() {
-      return [CMD_TYPES.SetMicrosteps, ...this.microsteps];
+      return u32_from_array([CMD_TYPES.SetMicrosteps, ...this.microsteps]);
     }
   };
   var ZeroCommand = class {
     constructor() {
     }
     encode() {
-      return [CMD_TYPES.Zero, 0, 0, 0, 0];
+      return u32_from_array([CMD_TYPES.ZeroPosition, 0, 0, 0, 0]);
     }
   };
   var StealthChopCommand = class {
@@ -148,7 +165,7 @@
       this.enables = enables;
     }
     encode() {
-      return [CMD_TYPES.StealthChop, ...this.enables];
+      return u32_from_array([CMD_TYPES.StealthChop, ...this.enables]);
     }
   };
   var CoolStepCommand = class {
@@ -156,17 +173,7 @@
       this.enables = enables;
     }
     encode() {
-      return [CMD_TYPES.CoolStep, ...this.enables];
-    }
-  };
-  var MusicModeCommand = class {
-    constructor() {
-    }
-    encode() {
-      return [
-        ...new MicrostepsCommand([1, 1, 1, 1]).encode(),
-        ...new StealthChopCommand([0, 0, 0, 0]).encode()
-      ];
+      return u32_from_array([CMD_TYPES.CoolStep, ...this.enables]);
     }
   };
   var AbsoluteAngleCommand = class {
@@ -206,7 +213,7 @@
         cmds.push(new XYCommand(xy));
       }
       cmds.push(new XYCommand(this.stop));
-      return cmds.flatMap((cmd2) => cmd2.encode());
+      return concat(cmds.map((cmd) => cmd.encode()));
     }
   };
   var CircleCommand = class {
@@ -222,7 +229,7 @@
         let xy = add(this.center, rotate([this.r, 0], theta));
         cmds.push(new XYCommand(xy));
       }
-      return cmds.flatMap((cmd2) => cmd2.encode());
+      return concat(cmds.map((cmd) => cmd.encode()));
     }
   };
   var StatusCommand = class {
@@ -230,7 +237,7 @@
       this.status = status;
     }
     encode() {
-      return [CMD_TYPES.Status, this.status, 0, 0, 0];
+      return u32_from_array([CMD_TYPES.SetStatus, this.status, 0, 0, 0]);
     }
   };
   var MultiCommmand = class {
@@ -238,32 +245,47 @@
       this.cmds = cmds;
     }
     encode() {
-      return this.cmds.flatMap((cmd2) => cmd2.encode());
+      return concat(this.cmds.map((cmd) => cmd.encode()));
     }
   };
-  var MusicCommand = class {
-    constructor(note, duration_s) {
-      this.note = note;
-      this.duration_s = duration_s;
+  var TimedMoveCommand = class {
+    constructor(step_sequence) {
+      this.step_sequence = step_sequence;
+    }
+    encode_timings() {
+      let last_cmd_index = 0;
+      let timing_commands = [];
+      for (let i = 0; i < this.step_sequence.length; i++) {
+        if (this.step_sequence[i] != 0) {
+          timing_commands.push(i - last_cmd_index | this.step_sequence[i] << 8);
+          last_cmd_index = i;
+        }
+        if (i - last_cmd_index == 256) {
+          timing_commands.push(i - last_cmd_index | 0);
+          last_cmd_index = i;
+        }
+      }
+      timing_commands.push(this.step_sequence.length - last_cmd_index);
+      return new Uint16Array(timing_commands);
     }
     encode() {
-      let notes = {
-        "a": 440,
-        "b": 466.16,
-        "c": 523.25,
-        "d": 587.33,
-        "e": 659.26,
-        "f": 698.46,
-        "g": 783.99
-      };
-      if (!notes[this.note]) throw new Error("bad note " + this.note);
-      let delay = Math.round(1e6 / notes[this.note]);
-      let steps = Math.round(this.duration_s * 1e6 / delay);
-      return [
-        ...new SpeedCommand(delay).encode(),
-        ...new ZeroCommand().encode(),
-        ...new MoveCommand([steps, steps, steps, steps]).encode()
+      let commands = this.encode_timings();
+      let header = [
+        CMD_TYPES.NewTimingReference,
+        0,
+        0,
+        0,
+        0,
+        CMD_TYPES.Timed,
+        commands.length,
+        0,
+        0,
+        0
       ];
+      return concat([
+        u32_from_array(header),
+        new Uint8Array(commands.buffer)
+      ]);
     }
   };
 
@@ -274,7 +296,7 @@
   function parse_command(cmd) {
     if (cmd[0] == "speed") {
       assert_len(cmd, 2);
-      return new SpeedCommand(eval(cmd[1]));
+      return new SpeedCommand((0, eval)(cmd[1]));
     } else if (cmd[0] == "move") {
       assert_len(cmd, 5);
       let nums = cmd.slice(1).map(eval);
@@ -299,8 +321,6 @@
     } else if (cmd[0] == "zero") {
       assert_len(cmd, 1);
       return new ZeroCommand();
-    } else if (cmd[0] == "note") {
-      return new MusicCommand(cmd[1], Number(cmd[2]));
     } else if (cmd[0] == "stealth") {
       assert_len(cmd, 5);
       let nums = cmd.slice(1).map(Number);
@@ -309,9 +329,6 @@
       assert_len(cmd, 5);
       let nums = cmd.slice(1).map(Number);
       return new CoolStepCommand([nums[0], nums[1], nums[2], nums[3]]);
-    } else if (cmd[0] == "musicmode") {
-      assert_len(cmd, 1);
-      return new MusicModeCommand();
     } else if (cmd[0] == "xy") {
       assert_len(cmd, 3);
       let nums = cmd.slice(1).map(Number);
@@ -330,9 +347,21 @@
     } else if (cmd[0] == "setup") {
       assert_len(cmd, 1);
       return new SetupCommand();
+    } else if (cmd[0] == "test") {
+      return test_timing();
     } else {
       throw new Error("unknown " + cmd.toString());
     }
+  }
+  function test_timing() {
+    let steps = new Uint8Array(1e6);
+    let h = 0;
+    for (let i = 0; i < 1e3; i++) {
+      steps[h] = 4;
+      h += 100;
+    }
+    console.log(h);
+    return new TimedMoveCommand(steps);
   }
   function apply_macro(macro, stack) {
     if (macro[0] == "#repeat") {
@@ -347,8 +376,9 @@
     go_button;
     estop;
     code;
+    status;
     waitin_promises = [];
-    constructor(ws_url, go_id, estop_id, code_id) {
+    constructor(ws_url, go_id, estop_id, code_id, status_id) {
       this.ws = new WebSocket(ws_url);
       this.ws.onmessage = (ev) => {
         let s = window.atob(ev.data);
@@ -364,13 +394,19 @@
       this.code = document.getElementById(code_id);
       this.go_button = document.getElementById(go_id);
       this.estop = document.getElementById(estop_id);
+      this.status = document.getElementById(status_id);
       this.ws.onopen = () => {
         console.log("WS opened");
+        this.status.innerHTML = "CONNECTED";
       };
       this.ws.onclose = () => {
         console.log("WS closed");
+        this.status.innerHTML = "DISCONNECTED";
       };
-      this.ws.onerror = console.log;
+      this.ws.onerror = (e) => {
+        console.log(e);
+        this.status.innerHTML = "ERROR";
+      };
       this.estop.addEventListener("click", () => {
         this.ws.send(new Uint32Array(new StopNowCommand().encode()));
       });
@@ -379,10 +415,12 @@
       });
     }
     execute(cmds) {
-      const binary = new Int32Array(cmds.flatMap((x) => x.encode()));
+      const binary = concat(cmds.flatMap((x) => x.encode()));
+      console.log(binary);
       this.ws.send(binary);
     }
     #new_status(status_index) {
+      this.status.innerHTML = status_index + "";
       this.waitin_promises = this.waitin_promises.filter((x) => {
         let { n, res } = x;
         if (n == status_index) {
@@ -398,11 +436,11 @@
       const lines2 = code.split("\n");
       const cmds = lines2.map((l) => l.toLowerCase()).map((l) => l.split(/\s/).filter((x) => x)).filter((x) => x.length);
       let commands = [];
-      for (const cmd2 of cmds) {
-        if (cmd2[0].startsWith("#")) {
-          apply_macro(cmd2, commands);
+      for (const cmd of cmds) {
+        if (cmd[0].startsWith("#")) {
+          apply_macro(cmd, commands);
         } else {
-          commands.push(parse_command(cmd2));
+          commands.push(parse_command(cmd));
         }
       }
       this.execute(commands);
@@ -415,8 +453,8 @@
   };
 
   // src/main.ts
-  var ui0 = new UI("ws://192.168.234.227/ws", "go_button0", "estop0", "code_input0");
-  var ui1 = new UI("ws://192.168.234.216/ws", "go_button1", "estop1", "code_input1");
+  var ui0 = new UI("ws://192.168.234.227/ws", "go_button0", "estop0", "code_input0", "status0");
+  var ui1 = new UI("ws://192.168.234.216/ws", "go_button1", "estop1", "code_input1", "status1");
   var CANVAS_GO = document.getElementById("canvas_go");
   var canvas = document.getElementById("canvas");
   canvas.width = canvas.clientWidth;

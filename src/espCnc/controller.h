@@ -18,11 +18,15 @@ public:
         digitalWrite(step_pin, LOW);
     }
     void set_dir(bool dir) {
-        digitalWrite(dir_pin, dir);
+        if(dir != current_dir){
+            digitalWrite(dir_pin, dir);
+            current_dir = dir;
+        }
     }
 private:
     TMC2209 tmc;
     TMC2209::SerialAddress addr;
     uint8_t step_pin;
     uint8_t dir_pin;
+    bool current_dir = false;
 };
