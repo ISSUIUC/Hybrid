@@ -25,12 +25,12 @@ MotorController controllers[4] {
     MotorController(Pins::STEP_B, Pins::DIR_B, TMC2209::SERIAL_ADDRESS_1),
     MotorController(Pins::STEP_D, Pins::DIR_D, TMC2209::SERIAL_ADDRESS_3),
 };
-static uint8_t cmd_buffer[1<<16]{};
+static uint8_t cmd_buffer[1<<17]{};
 static constexpr size_t TIMING_CHUNK_SIZE = (1<<12);
 static constexpr size_t TIMING_BUFFER_COUNT = 16;
-static TimedCommand timing_buffers[TIMING_CHUNK_SIZE][TIMING_BUFFER_COUNT]{};
+static TimedCommand timing_buffers[TIMING_BUFFER_COUNT][TIMING_CHUNK_SIZE]{};
 WirelessServer control_server(cmd_buffer, sizeof(cmd_buffer));
-Queue<Command, 1024> command_queue;
+Queue<Command, 512> command_queue;
 Queue<TimedCommand*, TIMING_BUFFER_COUNT> free_timing_buffers;
 
 struct {
@@ -84,9 +84,9 @@ int64_t execute_timing(const TimedCommand* cmds, size_t len, int64_t start_time)
         delay_until_microseconds(now);
         for(int channel = 0; channel < 4; channel++){
             if(cmd.get_channel(channel)) {
-                controllers[channel].set_dir(cmd.get_direction(i));
+                controllers[channel].set_dir(cmd.get_direction(channel));
                 controllers[channel].step();
-                motor_config.position[channel] += cmd.get_direction(i) ? 1 : -1;
+                motor_config.position[channel] += cmd.get_direction(channel) ? 1 : -1;
             }
         }
     }
@@ -157,7 +157,6 @@ void execute_cmd(const Command& cmd) {
         control_server.set_status(Status{.instruction_number = cmd.value});
     } else if(cmd.type == CommandType::Timed) {
         motor_config.now_time = execute_timing(cmd.timing_data.ptr, cmd.timing_data.count, motor_config.now_time);
-        Serial.println(motor_config.position[2]);
         free_timing_buffers.send(cmd.timing_data.ptr);
     } else if(cmd.type == CommandType::NewTimingReference) {
         motor_config.now_time = esp_timer_get_time();
@@ -240,14 +239,6 @@ void setup(){
                     chunk_cmd.timing_data.count = chunk_size;
                     chunk_cmd.timing_data.ptr = chunk;
                     
-                    Serial.println("timing ");
-                    int ct = 0;
-                    for(int i = 0; i < chunk_size; i++) {
-                        if(chunk[i].get_channel(2)) {
-                            ct++;
-                        }
-                    }
-                    Serial.println(ct);
                     if(!command_queue.send(chunk_cmd)) { panic(7); }
                     cmd.timing_data.count -= chunk_size;
                 }

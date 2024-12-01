@@ -402,13 +402,20 @@ static constexpr const char * js_string = R"rawstring((() => {
     }
   }
   function test_timing() {
-    let steps = new Uint8Array(1e6);
-    let h = 0;
-    for (let i = 0; i < 1e3; i++) {
-      steps[h] = 4;
-      h += 100;
+    let ct = 1e6;
+    let steps = new Uint8Array(ct);
+    for (let i = 0; i < ct; i++) {
+      let t1 = i / ct * 2 * Math.PI;
+      let t0 = (i - 1) / ct * 2 * Math.PI;
+      let s1 = Math.floor(Math.cos(t1) * 256 * 50);
+      let s2 = Math.floor(Math.cos(t0) * 256 * 50);
+      if (s1 > s2) {
+        steps[i] = 4;
+      }
+      if (s1 < s2) {
+        steps[i] = 68;
+      }
     }
-    console.log(h);
     return new TimedMoveCommand(steps);
   }
   function apply_macro(macro, stack) {

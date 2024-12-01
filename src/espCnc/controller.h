@@ -18,8 +18,8 @@ public:
         digitalWrite(step_pin, LOW);
     }
     void set_dir(bool dir) {
-        if(dir != current_dir){
-            digitalWrite(dir_pin, dir);
+        if(dir != current_dir) {
+            digitalWrite(dir_pin, dir ? LOW : HIGH);
             current_dir = dir;
         }
     }

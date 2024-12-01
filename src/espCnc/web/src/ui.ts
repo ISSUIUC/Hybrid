@@ -68,13 +68,20 @@ function parse_command(cmd: string[]) : Command {
 }
 
 function test_timing(): Command {
-    let steps = new Uint8Array(1000000);
-    let h = 0;
-    for(let i = 0; i < 1000; i++) {
-        steps[h] = 0x4;
-        h += 100;
+    let ct = 1000000;
+    let steps = new Uint8Array(ct);
+    for(let i = 0; i < ct; i++) {
+        let t1 = i / ct * 2 * Math.PI;
+        let t0 = (i-1) / ct * 2 * Math.PI;
+        let s1 = Math.floor(Math.cos(t1) * 256 * 50);
+        let s2 = Math.floor(Math.cos(t0) * 256 * 50);
+        if(s1 > s2) {
+            steps[i] = 0x04;
+        }
+        if(s1 < s2) {
+            steps[i] = 0x44;
+        }
     }
-    console.log(h);
     return new TimedMoveCommand(steps);
 }
 

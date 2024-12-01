@@ -40,12 +40,12 @@ public:
         return _delay;
     }
     bool get_channel(int channel) const {
-        return _channels & (0x01 << channel);
+        return (_channels & (0x01 << channel)) != 0;
     }
     bool get_direction(int channel) const {
-        return _channels & (0x10 << channel);
+        return (_channels & (0x10 << channel)) != 0;
     }
-private:
+// private:
     uint8_t _delay{};
     uint8_t _channels{};
 };
