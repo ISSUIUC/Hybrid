@@ -8,27 +8,28 @@
 void WirelessServer::handle_ws_message(void *arg, uint8_t *data, size_t len, size_t client_id) {
     AwsFrameInfo *info = (AwsFrameInfo*)arg;
 
-    if(!info->final) {
-        Serial.println("Err non final msg");
-        return;
-    }
+    if(callback) callback(data,len);
+    // if(!info->final) {
+    //     Serial.println("Err non final msg");
+    //     return;
+    // }
 
-    if(info->len > cmd_buffer_size) {
-        Serial.println("Err too large msg");
-        return;
-    }
+    // if(info->len > cmd_buffer_size) {
+    //     Serial.println("Err too large msg");
+    //     return;
+    // }
 
-    if(info->len <= cmd_buffer_size) {
-        memcpy(cmd_buffer + info->index, data, len);
-    }
+    // if(info->len <= cmd_buffer_size) {
+    //     memcpy(cmd_buffer + info->index, data, len);
+    // }
 
-    if(info->final && info->index + len == info->len) {
-        finish_ws_message(info->len);
-    }
+    // if(info->final && info->index + len == info->len) {
+    //     finish_ws_message(info->len);
+    // }
 }
 
 void WirelessServer::finish_ws_message(size_t len) {
-    if(callback) callback(cmd_buffer, len);
+    // if(callback) callback(cmd_buffer, len);
 }
 
 

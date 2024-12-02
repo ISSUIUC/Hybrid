@@ -1,6 +1,7 @@
 #pragma once
 
 #include<array>
+#include "panic.h"
 
 enum class CommandType: uint16_t {
     StopNow = 0,
@@ -8,17 +9,17 @@ enum class CommandType: uint16_t {
     StartAll = 2,
     Enable = 3,
     SetMicrosteps = 4,
-    SetVelocity = 5,
-    MoveTo = 6,
-    SetStepDir = 7,
-    SetSpeed = 8,
-    Wait = 9,
-    ZeroPosition = 10,
     StealthChop = 11,
     CoolStep = 12,
-    SetStatus = 13,
     NewTimingReference = 14,
     Timed = 15,
+};
+
+struct CommandHeader {
+    CommandType type;
+    uint16_t index;
+
+    
 };
 
 class TimedCommand {
@@ -45,7 +46,7 @@ public:
     bool get_direction(int channel) const {
         return (_channels & (0x10 << channel)) != 0;
     }
-// private:
+private:
     uint8_t _delay{};
     uint8_t _channels{};
 };
@@ -59,12 +60,48 @@ struct Command {
     CommandType type;
     uint16_t index;
     union {
-        std::array<int,4> enable;
-        std::array<int,4> set_microsteps;
-        std::array<int,4> set_velocity;
-        std::array<int,4> position;
-        int delay_us;
-        int value;
+        std::array<bool,4> enable;
+        std::array<uint16_t,4> microsteps;
         TimingData timing_data;
     };
+
+    static constexpr size_t HEADER_SIZE = 4;
+
+    size_t body_size() {
+        switch(type){
+            case CommandType::StopNow:
+                return 0;
+            case CommandType::StopAll:
+                return 0;
+            case CommandType::StartAll:
+                return 0;
+            case CommandType::Enable:
+                return sizeof(Command::enable);
+            case CommandType::SetMicrosteps:
+                return sizeof(Command::microsteps);
+            case CommandType::StealthChop:
+                return sizeof(Command::enable);
+            case CommandType::CoolStep:
+                return sizeof(Command::enable);
+            case CommandType::NewTimingReference:
+                return 0;
+            case CommandType::Timed:
+                return sizeof(TimingData::count);
+            default:
+                panic(14);
+                return 0;
+        }
+    }
+
+    size_t dynamic_size() {
+        if(type == CommandType::Timed) {
+            return timing_data.count * sizeof(TimedCommand);
+        } else {
+            return 0;
+        }
+    }
+
+    size_t full_size() {
+        return HEADER_SIZE + body_size() + dynamic_size();
+    }
 };

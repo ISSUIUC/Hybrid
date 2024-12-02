@@ -8,6 +8,7 @@
 #include "controller.h"
 #include "queue.h"
 #include "status.h"
+#include "panic.h"
 
 constexpr uint8_t leds[] = {
     Pins::LED_0,
@@ -25,12 +26,13 @@ MotorController controllers[4] {
     MotorController(Pins::STEP_B, Pins::DIR_B, TMC2209::SERIAL_ADDRESS_1),
     MotorController(Pins::STEP_D, Pins::DIR_D, TMC2209::SERIAL_ADDRESS_3),
 };
-static uint8_t cmd_buffer[1<<17]{};
-static constexpr size_t TIMING_CHUNK_SIZE = (1<<12);
-static constexpr size_t TIMING_BUFFER_COUNT = 16;
+static uint8_t staging_buffer[16192]{};
+size_t staging_index{};
+static constexpr size_t TIMING_CHUNK_SIZE = 4096;
+static constexpr size_t TIMING_BUFFER_COUNT = 22;
 static TimedCommand timing_buffers[TIMING_BUFFER_COUNT][TIMING_CHUNK_SIZE]{};
-WirelessServer control_server(cmd_buffer, sizeof(cmd_buffer));
-Queue<Command, 512> command_queue;
+WirelessServer control_server{};
+Queue<Command, 256> command_queue;
 Queue<TimedCommand*, TIMING_BUFFER_COUNT> free_timing_buffers;
 
 struct {
@@ -38,23 +40,6 @@ struct {
     int64_t now_time{};
     std::array<int,4> position{};
 } motor_config;
-
-void panic(int code) {
-    Serial.println("Panic");
-    Serial.println(code);
-    while(true){
-        for(int i = 0; i < sizeof(leds); i++){
-            if((1<<i)&code){
-                digitalWrite(leds[i], HIGH);
-            }
-        }
-        delay(100);
-        for(int i : leds){
-            digitalWrite(i, LOW);
-        }
-        delay(100);
-    }
-}
 
 void hardware_enable_all() {
     tcal.TCA9539_set_pin_val(Pins::ENN_A, TCA9539_PIN_OUT_LOW);
@@ -104,47 +89,8 @@ void execute_cmd(const Command& cmd) {
         }
     } else if(cmd.type == CommandType::SetMicrosteps){
         for(int i = 0; i < 4; i++){
-            controllers[i].set_microsteps(cmd.set_microsteps[i]);
+            controllers[i].set_microsteps(cmd.microsteps[i]);
         }
-    } else if(cmd.type == CommandType::SetVelocity){
-        for(int i = 0; i < 4; i++){
-            if(cmd.set_velocity[i] != INT_MIN) {
-                controllers[i].set_velocity(cmd.set_velocity[i]);
-            }
-        }
-    } else if(cmd.type == CommandType::SetStepDir){
-        for(int i = 0; i < 4; i++){
-            if(cmd.enable[i]) {
-                controllers[i].set_step_dir();
-            }
-        }
-    } else if(cmd.type == CommandType::SetSpeed){
-        motor_config.delay_us = cmd.delay_us;
-    } else if(cmd.type == CommandType::MoveTo){
-        
-        int diffs[4]{};
-        for(int i = 0; i < 4; i++){
-            diffs[i] = std::abs(motor_config.position[i] - cmd.position[i]);
-            bool dir = motor_config.position[i] < cmd.position[i];
-            controllers[i].set_dir(dir);
-        }
-        int longest = *std::max_element(std::begin(diffs), std::end(diffs));
-        int delay_us = motor_config.delay_us;
-        uint64_t start = esp_timer_get_time();
-        for(int step = 0; step < longest; step++) {
-            for(int i = 0; i < 4; i++){
-                if(diffs[i] > 0){
-                    controllers[i].step();
-                    diffs[i]--;
-                }
-            }
-            delay_until_microseconds(start + (step + 1) * delay_us);
-        }
-        motor_config.position = cmd.position;
-    } else if(cmd.type == CommandType::Wait){
-        delayMicroseconds(cmd.delay_us);
-    } else if(cmd.type == CommandType::ZeroPosition){
-        motor_config.position = {0,0,0,0};
     } else if(cmd.type == CommandType::StealthChop) {
         for(int i = 0; i < 4; i++){
             controllers[i].set_stealth_chop(cmd.enable[i]);
@@ -153,13 +99,14 @@ void execute_cmd(const Command& cmd) {
         for(int i = 0; i < 4; i++){
             controllers[i].set_cool_step(cmd.enable[i]);
         }
-    } else if(cmd.type == CommandType::SetStatus) {
-        control_server.set_status(Status{.instruction_number = cmd.value});
     } else if(cmd.type == CommandType::Timed) {
         motor_config.now_time = execute_timing(cmd.timing_data.ptr, cmd.timing_data.count, motor_config.now_time);
         free_timing_buffers.send(cmd.timing_data.ptr);
     } else if(cmd.type == CommandType::NewTimingReference) {
         motor_config.now_time = esp_timer_get_time();
+    } else {
+        Serial.print("Unknown command "); Serial.print((int)cmd.type);
+        panic(13);
     }
 }
 
@@ -215,40 +162,52 @@ void setup(){
     }
 
     control_server.on_message([](uint8_t* ptr, size_t len){
-        uint8_t* head = ptr;
-        uint8_t* end = ptr + len;
-        while(head < end) {
-            Command cmd;
-            memcpy(&cmd, head, sizeof(cmd));
-            head += sizeof(cmd);
+        if(staging_index + len > sizeof(staging_buffer)) { 
+            Serial.print("Staging index "); Serial.println(staging_index);
+            Serial.print("len "); Serial.println(len);
+            panic(10); 
+        }
+
+        memcpy(staging_buffer + staging_index, ptr, len);
+        staging_index += len;
+
+        uint8_t* head = staging_buffer;
+        uint8_t* end = staging_buffer + staging_index;
+        while(end - head >= sizeof(CommandHeader)) {
+            Command cmd{};
+            memcpy(&cmd, head, Command::HEADER_SIZE);
+            if(Command::HEADER_SIZE + cmd.body_size() > end - head) {
+                break;
+            }
+            memcpy(&cmd, head, Command::HEADER_SIZE + cmd.body_size());
 
             if(cmd.type == CommandType::StopNow) {
                 hardware_disable_all();
                 flush_command_queue();
             } else if(cmd.type == CommandType::Timed) {
-                while(cmd.timing_data.count > 0) {
-                    size_t chunk_size = std::min(cmd.timing_data.count, TIMING_CHUNK_SIZE);
-                    if(head + chunk_size * sizeof(TimedCommand) > end) { panic(8);}
+                if(cmd.full_size() > end - head) {
+                    break;
+                };
+                if(cmd.timing_data.count > TIMING_CHUNK_SIZE) { panic(11); };
 
-                    TimedCommand* chunk{};
-                    if(!free_timing_buffers.receive(&chunk)) { panic(6); }
-                    memcpy(chunk, head, chunk_size * sizeof(TimedCommand));
-                    head += chunk_size * sizeof(TimedCommand);
+                TimedCommand* chunk{};
+                if(!free_timing_buffers.receive_wait(&chunk)) { panic(6); }
 
-                    Command chunk_cmd{.type = CommandType::Timed};
-                    chunk_cmd.timing_data.count = chunk_size;
-                    chunk_cmd.timing_data.ptr = chunk;
-                    
-                    if(!command_queue.send(chunk_cmd)) { panic(7); }
-                    cmd.timing_data.count -= chunk_size;
-                }
+                memcpy(chunk, head + Command::HEADER_SIZE + cmd.body_size(), cmd.timing_data.count * sizeof(TimedCommand));
+                cmd.timing_data.ptr = chunk;
+                if(!command_queue.send_wait(cmd)) { panic(7); }
             } else {
-                if(!command_queue.send(cmd)) { panic(8); }
+                if(!command_queue.send_wait(cmd)) { panic(8); }
             }
+
+            head += cmd.full_size();
         }
+        
+        memmove(staging_buffer, head, end - head);
+        staging_index = end - head;
     });
 
-    control_server.setup_wifi("foobar3","25mjrn15");
+    control_server.setup_wifi("SJSK2","srijanshukla");
     hardware_enable_all();
     digitalWrite(Pins::LED_0, HIGH);
 }
@@ -260,56 +219,7 @@ void loop(){
     Command cmd;
     if(command_queue.receive(&cmd)){
         execute_cmd(cmd);
-    }
-    if(Serial.available()){
-        int v = Serial.read();
-        if(v == 'o') {
-            Serial.println("Hardware enable");
-            Command cmd;
-            cmd.type = CommandType::StartAll;
-            execute_cmd(cmd);
-            cmd.type = CommandType::Enable;
-            cmd.enable = {true,true,true,true};
-            execute_cmd(cmd);
-        } else if(v == 'l') {
-            Serial.println("Hardware disable");
-            Command cmd;
-            cmd.type = CommandType::StopAll;
-            execute_cmd(cmd);
-            cmd.type = CommandType::Enable;
-            cmd.enable = {false,false,false,false};
-            execute_cmd(cmd);
-        } else if(v == '3') {
-            delay_us *= 1.1;
-            Serial.print("delay = ");
-            Serial.println(delay_us);
-            Command cmd;
-            cmd.type = CommandType::SetSpeed;
-            cmd.delay_us = delay_us;
-            execute_cmd(cmd);
-        } else if(v == '4') {
-            delay_us /= 1.1;
-            Serial.print("delay = ");
-            Serial.println(delay_us);
-            Command cmd;
-            cmd.type = CommandType::SetSpeed;
-            cmd.delay_us = delay_us;
-            execute_cmd(cmd);
-        } else if(v == '9') {
-            pos_tracker += 1600;
-            Command cmd;
-            Serial.print("Pos "); Serial.println(pos_tracker);
-            cmd.type = CommandType::MoveTo;
-            cmd.position = {pos_tracker,pos_tracker,pos_tracker,pos_tracker};
-            execute_cmd(cmd);
-        } else if(v == '0') {
-            pos_tracker -= 1600;
-            Serial.print("Pos "); Serial.println(pos_tracker);
-            Command cmd;
-            cmd.type = CommandType::MoveTo;
-            cmd.position = {pos_tracker,pos_tracker,pos_tracker,pos_tracker};
-            execute_cmd(cmd);
-        }
+        control_server.set_status(Status{.instruction_number = cmd.index});
     }
 }
 
