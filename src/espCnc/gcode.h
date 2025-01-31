@@ -18,8 +18,6 @@ enum class CommandType: uint16_t {
 struct CommandHeader {
     CommandType type;
     uint16_t index;
-
-    
 };
 
 class TimedCommand {
@@ -88,6 +86,8 @@ struct Command {
             case CommandType::Timed:
                 return sizeof(TimingData::count);
             default:
+                Serial.print("Got unexpected ");
+                Serial.println((int)type);
                 panic(14);
                 return 0;
         }

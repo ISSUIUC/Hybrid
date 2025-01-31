@@ -14,6 +14,8 @@ inline void panic(int code) {
     };
     
     while(true){
+        Serial.print("Panic ");
+        Serial.println(code);
         for(int i = 0; i < sizeof(leds); i++){
             if((1<<i)&code){
                 digitalWrite(leds[i], HIGH);

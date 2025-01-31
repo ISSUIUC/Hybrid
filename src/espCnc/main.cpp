@@ -1,14 +1,13 @@
 #include<Arduino.h>
-#include<Adafruit_MCP4728.h>
-#include<TCA9539.h>
 #include<TMC2209.h>
-#include "wireless.h"
+#include<USB.h>
 #include "esp_pins.h"
 #include "gcode.h"
 #include "controller.h"
 #include "queue.h"
 #include "status.h"
 #include "panic.h"
+#include "wireless.h"
 
 constexpr uint8_t leds[] = {
     Pins::LED_0,
@@ -17,21 +16,84 @@ constexpr uint8_t leds[] = {
     Pins::LED_3,
 };
 
-constexpr uint8_t TCA_ADDRESS = 0x74;
-constexpr uint8_t TEMP_ADDRESS = 0x44;
-TCA9539 tcal(Pins::IO_RESET, Pins::IO_INT, TCA_ADDRESS);
-MotorController controllers[4] {
-    MotorController(Pins::STEP_A, Pins::DIR_A, TMC2209::SERIAL_ADDRESS_0),
-    MotorController(Pins::STEP_C, Pins::DIR_C, TMC2209::SERIAL_ADDRESS_2),
-    MotorController(Pins::STEP_B, Pins::DIR_B, TMC2209::SERIAL_ADDRESS_1),
-    MotorController(Pins::STEP_D, Pins::DIR_D, TMC2209::SERIAL_ADDRESS_3),
+constexpr uint8_t all_pins[] = {
+    Pins::DIR_0,
+    Pins::STEP_0,
+    Pins::SDA_0,
+    Pins::ENN_0,
+    Pins::DIR_3,
+    Pins::SDA_3,
+    Pins::STEP_3,
+    Pins::ENN_3,
+    Pins::SCL,
+    Pins::DIR_1,
+    Pins::STEP_1,
+    Pins::SDA_1,
+    Pins::ENN_1,
+    Pins::DIR_2,
+    Pins::STEP_2,
+    Pins::SDA_2,
+    Pins::ENN_2,
+    Pins::SDA,
+    Pins::TP22,
+    Pins::TP23,
+    Pins::TP24,
+    Pins::TP25,
+    Pins::TP26,
+    Pins::TP27,
+    Pins::TP28,
+    Pins::TP29,
+    Pins::LED_3,
+    Pins::LED_2,
+    Pins::LED_1,
+    Pins::LED_0,
 };
+
+constexpr const char * all_pins_names[] = {
+    "Pins::DIR_0",
+    "Pins::STEP_0",
+    "Pins::SDA_0",
+    "Pins::ENN_0",
+    "Pins::DIR_3",
+    "Pins::SDA_3",
+    "Pins::STEP_3",
+    "Pins::ENN_3",
+    "Pins::SCL",
+    "Pins::DIR_1",
+    "Pins::STEP_1",
+    "Pins::SDA_1",
+    "Pins::ENN_1",
+    "Pins::DIR_2",
+    "Pins::STEP_2",
+    "Pins::SDA_2",
+    "Pins::ENN_2",
+    "Pins::SDA",
+    "Pins::TP22",
+    "Pins::TP23",
+    "Pins::TP24",
+    "Pins::TP25",
+    "Pins::TP26",
+    "Pins::TP27",
+    "Pins::TP28",
+    "Pins::TP29",
+    "Pins::LED_3",
+    "Pins::LED_2",
+    "Pins::LED_1",
+    "Pins::LED_0",
+};
+
+MotorController controllers[4] {
+    MotorController(Pins::STEP_0, Pins::DIR_0, TMC2209::SERIAL_ADDRESS_0),
+    MotorController(Pins::STEP_1, Pins::DIR_1, TMC2209::SERIAL_ADDRESS_2),
+    MotorController(Pins::STEP_2, Pins::DIR_2, TMC2209::SERIAL_ADDRESS_1),
+    MotorController(Pins::STEP_3, Pins::DIR_3, TMC2209::SERIAL_ADDRESS_3),
+};
+
 static uint8_t staging_buffer[16192]{};
 size_t staging_index{};
 static constexpr size_t TIMING_CHUNK_SIZE = 4096;
 static constexpr size_t TIMING_BUFFER_COUNT = 22;
 static TimedCommand timing_buffers[TIMING_BUFFER_COUNT][TIMING_CHUNK_SIZE]{};
-WirelessServer control_server{};
 Queue<Command, 256> command_queue;
 Queue<TimedCommand*, TIMING_BUFFER_COUNT> free_timing_buffers;
 
@@ -42,17 +104,17 @@ struct {
 } motor_config;
 
 void hardware_enable_all() {
-    tcal.TCA9539_set_pin_val(Pins::ENN_A, TCA9539_PIN_OUT_LOW);
-    tcal.TCA9539_set_pin_val(Pins::ENN_B, TCA9539_PIN_OUT_LOW);
-    tcal.TCA9539_set_pin_val(Pins::ENN_C, TCA9539_PIN_OUT_LOW);
-    tcal.TCA9539_set_pin_val(Pins::ENN_D, TCA9539_PIN_OUT_LOW);
+    digitalWrite(Pins::ENN_0, LOW);
+    digitalWrite(Pins::ENN_1, LOW);
+    digitalWrite(Pins::ENN_2, LOW);
+    digitalWrite(Pins::ENN_3, LOW);
 }
 
 void hardware_disable_all() {
-    tcal.TCA9539_set_pin_val(Pins::ENN_A, TCA9539_PIN_OUT_HIGH);
-    tcal.TCA9539_set_pin_val(Pins::ENN_B, TCA9539_PIN_OUT_HIGH);
-    tcal.TCA9539_set_pin_val(Pins::ENN_C, TCA9539_PIN_OUT_HIGH);
-    tcal.TCA9539_set_pin_val(Pins::ENN_D, TCA9539_PIN_OUT_HIGH);
+    digitalWrite(Pins::ENN_0, HIGH);
+    digitalWrite(Pins::ENN_1, HIGH);
+    digitalWrite(Pins::ENN_2, HIGH);
+    digitalWrite(Pins::ENN_3, HIGH);
 }
 
 void delay_until_microseconds(uint64_t end) {
@@ -119,107 +181,161 @@ void flush_command_queue() {
     }
 }
 
-void setup(){
-    Serial.begin(115200);
-    
-    for(int i : leds){
-        pinMode(i, OUTPUT);
+void on_command_message(uint8_t* ptr, size_t len) {
+    if(staging_index + len > sizeof(staging_buffer)) { 
+        Serial.print("Staging index "); Serial.println(staging_index);
+        Serial.print("len "); Serial.println(len);
+        panic(10); 
     }
 
+    memcpy(staging_buffer + staging_index, ptr, len);
+    staging_index += len;
+
+    uint8_t* head = staging_buffer;
+    uint8_t* end = staging_buffer + staging_index;
+    while(end - head >= sizeof(CommandHeader)) {
+        Command cmd{};
+        memcpy(&cmd, head, Command::HEADER_SIZE);
+        if(Command::HEADER_SIZE + cmd.body_size() > end - head) {
+            break;
+        }
+        memcpy(&cmd, head, Command::HEADER_SIZE + cmd.body_size());
+
+        if(cmd.type == CommandType::StopNow) {
+            Serial.println("EStop");
+            hardware_disable_all();
+            flush_command_queue();
+        } else if(cmd.type == CommandType::Timed) {
+            if(cmd.full_size() > end - head) {
+                break;
+            };
+            if(cmd.timing_data.count > TIMING_CHUNK_SIZE) { panic(11); };
+
+            TimedCommand* chunk{};
+            if(!free_timing_buffers.receive_wait(&chunk)) { panic(6); }
+
+            memcpy(chunk, head + Command::HEADER_SIZE + cmd.body_size(), cmd.timing_data.count * sizeof(TimedCommand));
+            cmd.timing_data.ptr = chunk;
+            if(!command_queue.send_wait(cmd)) { panic(7); }
+        } else {
+            if(!command_queue.send_wait(cmd)) { panic(8); }
+        }
+
+        head += cmd.full_size();
+    }
+    
+    memmove(staging_buffer, head, end - head);
+    staging_index = end - head;
+}
+
+void task_loop(void * args) {
+    delay(10);
+    Serial.print("Task loop started on core ");
+    Serial.println(xPortGetCoreID());
+    size_t total_read = 0;
+    USB.webUSB(true);
+    while(true) {
+        // uint8_t buff[1024]{};
+        // size_t ct = Serial.available();
+        // if(ct != 0){
+        //     size_t max_read = std::min(ct, sizeof(buff));
+        //     size_t read = Serial.readBytes(buff, max_read);
+        //     if(max_read != read){
+        //         Serial.println("ERR Read Mismatch");
+        //     }
+        //     total_read += read;
+        //     Serial.println(total_read);
+        // }
+        delay(100);
+        size_t m = millis();
+        digitalWrite(Pins::LED_0, (m / 500) % 2);
+    }
+}
+
+void step_loop(void * args) {
+    Serial.print("Step loop started on core ");
+    Serial.println(xPortGetCoreID());
+    while(true) {
+        Command cmd{};
+        if(command_queue.receive_wait(&cmd)){
+            execute_cmd(cmd);
+        }
+    }
+}
+
+void setup(){
+    Serial.begin(460800);
+    pinMode(Pins::LED_0, OUTPUT);
+    pinMode(Pins::LED_1, OUTPUT);
+    pinMode(Pins::LED_2, OUTPUT);
+    pinMode(Pins::LED_3, OUTPUT);
+    pinMode(Pins::ENN_0, OUTPUT);
+    pinMode(Pins::STEP_0, OUTPUT);
+    pinMode(Pins::DIR_0, OUTPUT);
+    pinMode(Pins::ENN_1, OUTPUT);
+    pinMode(Pins::STEP_1, OUTPUT);
+    pinMode(Pins::DIR_1, OUTPUT);
+    pinMode(Pins::ENN_2, OUTPUT);
+    pinMode(Pins::STEP_2, OUTPUT);
+    pinMode(Pins::DIR_2, OUTPUT);
+    pinMode(Pins::ENN_3, OUTPUT);
+    pinMode(Pins::STEP_3, OUTPUT);
+    pinMode(Pins::DIR_3, OUTPUT);
+    pinMode(Pins::TP22, OUTPUT);
+    pinMode(Pins::TP23, OUTPUT);
+    pinMode(Pins::TP24, OUTPUT);
+    pinMode(Pins::TP25, OUTPUT);
+    pinMode(Pins::TP26, OUTPUT);
+    pinMode(Pins::TP27, OUTPUT);
+    pinMode(Pins::TP28, OUTPUT);
+    pinMode(Pins::TP29, OUTPUT);
+    digitalWrite(Pins::ENN_0, LOW);
+    digitalWrite(Pins::STEP_0, LOW);
+    digitalWrite(Pins::DIR_0, LOW);
+    digitalWrite(Pins::ENN_1, LOW);
+    digitalWrite(Pins::STEP_1, LOW);
+    digitalWrite(Pins::DIR_1, LOW);
+    digitalWrite(Pins::ENN_2, LOW);
+    digitalWrite(Pins::STEP_2, LOW);
+    digitalWrite(Pins::DIR_2, LOW);
+    digitalWrite(Pins::ENN_3, LOW);
+    digitalWrite(Pins::STEP_3, LOW);
+    digitalWrite(Pins::DIR_3, LOW);
+    hardware_disable_all();
+    
     for(TimedCommand* buffer : timing_buffers) {
         free_timing_buffers.send(buffer);
     }
 
-    if(!Wire.begin(Pins::SDA, Pins::SCL)){
-        panic(1);
-    }
-    tcal.TCA9539_init();
-    for(int i = 0; i < 16; i++){
-        tcal.TCA9539_set_dir(i, TCA9539_PIN_DIR_OUTPUT);
-    }
-    tcal.TCA9539_set_pin_val(Pins::SPREAD_B, TCA9539_PIN_OUT_LOW);
-    tcal.TCA9539_set_pin_val(Pins::ENN_B, TCA9539_PIN_OUT_HIGH);
-    tcal.TCA9539_set_pin_val(Pins::SPREAD_A, TCA9539_PIN_OUT_LOW);
-    tcal.TCA9539_set_pin_val(Pins::ENN_A, TCA9539_PIN_OUT_HIGH);
-    tcal.TCA9539_set_pin_val(Pins::SPREAD_C, TCA9539_PIN_OUT_LOW);
-    tcal.TCA9539_set_pin_val(Pins::ENN_C, TCA9539_PIN_OUT_HIGH);
-    tcal.TCA9539_set_pin_val(Pins::SPREAD_D, TCA9539_PIN_OUT_LOW);
-    tcal.TCA9539_set_pin_val(Pins::ENN_D, TCA9539_PIN_OUT_HIGH);
-
-    tcal.TCA9539_set_pin_val(Pins::MS1_A, TCA9539_PIN_OUT_LOW);
-    tcal.TCA9539_set_pin_val(Pins::MS2_A, TCA9539_PIN_OUT_LOW);
-    tcal.TCA9539_set_pin_val(Pins::MS1_B, TCA9539_PIN_OUT_HIGH);
-    tcal.TCA9539_set_pin_val(Pins::MS2_B, TCA9539_PIN_OUT_LOW);
-    tcal.TCA9539_set_pin_val(Pins::MS1_C, TCA9539_PIN_OUT_LOW);
-    tcal.TCA9539_set_pin_val(Pins::MS2_C, TCA9539_PIN_OUT_HIGH);
-    tcal.TCA9539_set_pin_val(Pins::MS1_D, TCA9539_PIN_OUT_HIGH);
-    tcal.TCA9539_set_pin_val(Pins::MS2_D, TCA9539_PIN_OUT_HIGH);
-
-
     Serial0.begin(115200);
-    if(!controllers[2].init()) {
-        panic(5);
+    for(int i = 0; i < 4; i++){
+        if(!controllers[i].init()) {
+            panic(i);
+        }
+        controllers[i].enable(true);
     }
 
-    control_server.on_message([](uint8_t* ptr, size_t len){
-        if(staging_index + len > sizeof(staging_buffer)) { 
-            Serial.print("Staging index "); Serial.println(staging_index);
-            Serial.print("len "); Serial.println(len);
-            panic(10); 
-        }
-
-        memcpy(staging_buffer + staging_index, ptr, len);
-        staging_index += len;
-
-        uint8_t* head = staging_buffer;
-        uint8_t* end = staging_buffer + staging_index;
-        while(end - head >= sizeof(CommandHeader)) {
-            Command cmd{};
-            memcpy(&cmd, head, Command::HEADER_SIZE);
-            if(Command::HEADER_SIZE + cmd.body_size() > end - head) {
-                break;
-            }
-            memcpy(&cmd, head, Command::HEADER_SIZE + cmd.body_size());
-
-            if(cmd.type == CommandType::StopNow) {
-                hardware_disable_all();
-                flush_command_queue();
-            } else if(cmd.type == CommandType::Timed) {
-                if(cmd.full_size() > end - head) {
-                    break;
-                };
-                if(cmd.timing_data.count > TIMING_CHUNK_SIZE) { panic(11); };
-
-                TimedCommand* chunk{};
-                if(!free_timing_buffers.receive_wait(&chunk)) { panic(6); }
-
-                memcpy(chunk, head + Command::HEADER_SIZE + cmd.body_size(), cmd.timing_data.count * sizeof(TimedCommand));
-                cmd.timing_data.ptr = chunk;
-                if(!command_queue.send_wait(cmd)) { panic(7); }
-            } else {
-                if(!command_queue.send_wait(cmd)) { panic(8); }
-            }
-
-            head += cmd.full_size();
-        }
-        
-        memmove(staging_buffer, head, end - head);
-        staging_index = end - head;
-    });
-
-    control_server.setup_wifi("SJSK2","srijanshukla");
-    hardware_enable_all();
+    hardware_disable_all();
     digitalWrite(Pins::LED_0, HIGH);
+    digitalWrite(Pins::LED_1, HIGH);
+    digitalWrite(Pins::LED_2, HIGH);
+    digitalWrite(Pins::LED_3, HIGH);
+
+    set_data_callback(on_command_message);
+    setup_wifi("SJSK2", "srijanshukla");
+
+    digitalWrite(Pins::LED_0, LOW);
+    digitalWrite(Pins::LED_1, LOW);
+    digitalWrite(Pins::LED_2, LOW);
+    digitalWrite(Pins::LED_3, LOW);
+
+
+    // xTaskCreatePinnedToCore(task_loop, "Task Loop", 8192, nullptr, 1, nullptr, 1);
+    xTaskCreatePinnedToCore(step_loop, "Step Loop", 8192, nullptr, 1, nullptr, 1);
 }
 
-int delay_us = 2000;
-int pos_tracker = 0;
 
 void loop(){
-    Command cmd;
-    if(command_queue.receive(&cmd)){
-        execute_cmd(cmd);
-        control_server.set_status(Status{.instruction_number = cmd.index});
-    }
+    delay(100000);
 }
 

@@ -13,6 +13,7 @@ public:
     void set_step_dir();
     void set_stealth_chop(bool stealth_chop);
     void set_cool_step(bool cool_step);
+    bool check_uart();
     void step() {
         digitalWrite(step_pin, HIGH);
         digitalWrite(step_pin, LOW);

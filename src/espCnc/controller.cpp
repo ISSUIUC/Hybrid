@@ -17,7 +17,7 @@ bool MotorController::init(){
     tmc.setAllCurrentValues(100,100,100);
     tmc.setMicrostepsPerStep(8);
     tmc.enableStealthChop();
-tmc.enableCoolStep();
+    tmc.enableCoolStep();
     return true;
 }
 
@@ -45,7 +45,9 @@ void MotorController::set_cool_step(bool cool_step){
     }
 }
 
-
+bool MotorController::check_uart() {
+    return tmc.isSetupAndCommunicating();
+}
 
 void MotorController::set_microsteps(int steps) {
     tmc.setMicrostepsPerStep(steps);

@@ -28,6 +28,7 @@
       this.command_type = command_type;
       this.data = data;
     }
+    index = 0;
   };
   var EStopCommand = class {
     encode() {
@@ -89,9 +90,8 @@
       if (sequence.length > MAX_CHUNK) throw new Error("Too big chunk");
     }
     encode() {
-      console.log(this.sequence);
       let buff = new Uint8Array(this.sequence.byteLength + 4);
-      let u32 = new Uint32Array(buff.buffer);
+      let u32 = new Uint32Array(buff.buffer, 0, 1);
       u32[0] = this.sequence.length;
       buff.set(new Uint8Array(this.sequence.buffer, this.sequence.byteOffset, this.sequence.byteLength), 4);
       return [new MicroCommand(CMD_TYPES.Timed, buff)];
@@ -109,7 +109,7 @@
           timing_commands.push(i - last_cmd_index | this.step_sequence[i] << 8);
           last_cmd_index = i;
         }
-        if (i - last_cmd_index == 256) {
+        if (i - last_cmd_index == 255) {
           timing_commands.push(i - last_cmd_index | 0);
           last_cmd_index = i;
         }
@@ -125,7 +125,6 @@
         let chunk = commands.subarray(i * MAX_CHUNK, (i + 1) * MAX_CHUNK);
         parts.push(new ContinuousTimedSequenceCommand(chunk));
       }
-      console.log(parts);
       return new MultiCommmand(parts).encode();
     }
   };
@@ -148,35 +147,90 @@
       ]).encode();
     }
   };
-  var ExecutionSession = class {
-    constructor(ws) {
-      this.ws = ws;
+  var LineCommand = class {
+    constructor(dst) {
+      this.dst = dst;
     }
-    cmd_index = 0;
-    build_execution(commands, base_index) {
-      let chunks = [];
+    encode() {
+      const mm_per_step = 40 / (256 * 200);
+      const step_per_mm = 256 * 200 / 40;
+      const max_speed = 80;
+      const max_accel = 1e3;
+      let major_axis = Math.max(Math.abs(this.dst[0]), Math.abs(this.dst[1]));
+      let accel_time = max_speed / max_accel;
+      let accel_dist = accel_time ** 2 * max_accel / 2;
+      let pos = 0;
+      let dt = 1e-6;
+      let steps = [];
+      let i = 0;
+      let dist = 0;
+      let calc_step = (pos2, dpos) => {
+        let pos_steps = pos2 * step_per_mm;
+        let next_pos_steps = (pos2 + dpos) * step_per_mm;
+        let step = 0;
+        if (Math.round(pos_steps * this.dst[0] / major_axis) < Math.round(next_pos_steps * this.dst[0] / major_axis)) {
+          step |= 8;
+          dist += 1;
+        }
+        if (Math.round(pos_steps * this.dst[0] / major_axis) > Math.round(next_pos_steps * this.dst[0] / major_axis)) {
+          step |= 136;
+          dist -= 1;
+        }
+        if (Math.round(pos_steps * this.dst[1] / major_axis) < Math.round(next_pos_steps * this.dst[1] / major_axis)) {
+          step |= 1;
+        }
+        if (Math.round(pos_steps * this.dst[1] / major_axis) > Math.round(next_pos_steps * this.dst[1] / major_axis)) {
+          step |= 17;
+        }
+        return step;
+      };
+      for (; pos < major_axis / 2 && pos < accel_dist; i++) {
+        let vel = i * dt * max_accel;
+        steps.push(calc_step(pos, vel * dt));
+        pos += vel * dt;
+      }
+      while (pos < major_axis - accel_dist) {
+        let vel = i * dt * max_accel;
+        steps.push(calc_step(pos, vel * dt));
+        pos += vel * dt;
+      }
+      for (; pos < major_axis; i--) {
+        let vel = i * dt * max_accel;
+        steps.push(calc_step(pos, vel * dt));
+        pos += vel * dt;
+      }
+      return new TimedMoveCommand(new Uint8Array(steps)).encode();
+    }
+  };
+  var ExecutionSession = class {
+    constructor() {
+    }
+    compile_commands(commands, base_index) {
       let index = base_index;
+      let micro_commands = [];
       for (const cmd of commands) {
         let micros = cmd.encode();
         for (const micro of micros) {
-          let chunk = new Uint8Array(4 + (micro.data?.length | 0));
-          let u16 = new Uint16Array(chunk.buffer);
-          u16[0] = micro.command_type;
-          u16[1] = index;
-          if (micro.data) {
-            chunk.set(micro.data, 4);
-          }
-          chunks.push(chunk);
+          micro.index = index;
+          micro_commands.push(micro);
         }
         index++;
       }
-      return concat(chunks);
+      return micro_commands;
     }
-    execute(commands) {
-      const binary = this.build_execution(commands, this.cmd_index);
-      this.cmd_index += commands.length;
-      console.log(binary);
-      this.ws.send(binary);
+    serialize_micros(micros) {
+      let chunks = [];
+      for (const micro of micros) {
+        let chunk = new Uint8Array(4 + (micro.data?.length | 0));
+        let u16 = new Uint16Array(chunk.buffer);
+        u16[0] = micro.command_type;
+        u16[1] = micro.index;
+        if (micro.data) {
+          chunk.set(micro.data, 4);
+        }
+        chunks.push(chunk);
+      }
+      return concat(chunks);
     }
   };
 
@@ -212,26 +266,28 @@
       return new SetupCommand();
     } else if (cmd[0] == "test") {
       return test_timing();
+    } else if (cmd[0] == "line") {
+      assert_len(cmd, 3);
+      let nums = cmd.slice(1).map(Number);
+      return new LineCommand([nums[0], nums[1]]);
     } else {
       throw new Error("unknown " + cmd.toString());
     }
   }
   function test_timing() {
-    let ct = 1e6;
-    let steps = new Uint8Array(ct);
-    for (let i = 0; i < ct; i++) {
-      let t1 = i / ct * 2 * Math.PI;
-      let t0 = (i - 1) / ct * 2 * Math.PI;
-      let s1 = Math.floor(Math.cos(t1) * 256 * 50);
-      let s2 = Math.floor(Math.cos(t0) * 256 * 50);
-      if (s1 > s2) {
-        steps[i] = 4;
-      }
-      if (s1 < s2) {
-        steps[i] = 68;
-      }
+    let cmds = [];
+    let x = 0;
+    let y = 0;
+    for (let i = 0; i < 40; i++) {
+      let t = i / 4 * 2 * Math.PI;
+      let ex = Math.sin(t) * 30;
+      let ey = Math.cos(t) * 30;
+      cmds.push(new LineCommand([ex - x, ey - y]));
+      x = ex;
+      y = ey;
     }
-    return new TimedMoveCommand(steps);
+    cmds.push(new LineCommand([-x, -y]));
+    return new MultiCommmand(cmds);
   }
   var UI = class {
     ws;
@@ -239,45 +295,48 @@
     estop;
     code;
     status;
+    onMicros = null;
     waiting_promises = [];
     session;
     constructor(ws_url, go_id, estop_id, code_id, status_id) {
-      this.ws = new WebSocket(ws_url);
-      this.session = new ExecutionSession(this.ws);
-      this.ws.onmessage = (ev) => {
-        let s = window.atob(ev.data);
-        let d = new Uint8Array(s.length);
-        for (let i = 0; i < s.length; i++) {
-          let v = s.charCodeAt(i);
-          d[i] = v;
-        }
-        let u32 = new Uint32Array(d.buffer);
-        let status_index = u32[0];
-        this.new_status(status_index);
-      };
+      this.session = new ExecutionSession();
       this.code = document.getElementById(code_id);
       this.go_button = document.getElementById(go_id);
       this.estop = document.getElementById(estop_id);
       this.status = document.getElementById(status_id);
-      this.ws.onopen = () => {
-        console.log("WS opened");
-        this.status.innerHTML = "CONNECTED";
-      };
-      this.ws.onclose = () => {
-        console.log("WS closed");
-        this.status.innerHTML = "DISCONNECTED";
-      };
-      this.ws.onerror = (e) => {
-        console.log(e);
-        this.status.innerHTML = "ERROR";
-      };
       this.estop.addEventListener("click", () => {
         let cmds = [new EStopCommand()];
-        this.session.execute(cmds);
+        this.execute(cmds);
       });
       this.go_button.addEventListener("click", () => {
         this.upload_code();
       });
+      if (ws_url) {
+        this.ws = new WebSocket(ws_url);
+        this.ws.onmessage = (ev) => {
+          let s = window.atob(ev.data);
+          let d = new Uint8Array(s.length);
+          for (let i = 0; i < s.length; i++) {
+            let v = s.charCodeAt(i);
+            d[i] = v;
+          }
+          let u32 = new Uint32Array(d.buffer);
+          let status_index = u32[0];
+          this.new_status(status_index);
+        };
+        this.ws.onopen = () => {
+          console.log("WS opened");
+          this.status.innerHTML = "CONNECTED";
+        };
+        this.ws.onclose = () => {
+          console.log("WS closed");
+          this.status.innerHTML = "DISCONNECTED";
+        };
+        this.ws.onerror = (e) => {
+          console.log(e);
+          this.status.innerHTML = "ERROR";
+        };
+      }
     }
     new_status(status_index) {
       this.status.innerHTML = status_index + "";
@@ -291,6 +350,12 @@
         }
       });
     }
+    execute(cmds) {
+      let micros = this.session.compile_commands(cmds, 0);
+      let binary = this.session.serialize_micros(micros);
+      if (this.onMicros) this.onMicros(micros);
+      if (this.ws) this.ws.send(binary);
+    }
     upload_code() {
       const code = this.code.value;
       const lines = code.split("\n");
@@ -299,7 +364,7 @@
       for (const cmd of cmds) {
         commands.push(parse_command(cmd));
       }
-      this.session.execute(commands);
+      this.execute(commands);
     }
     async wait_for_status(status) {
       return new Promise((res, rej) => {
@@ -309,11 +374,6 @@
   };
 
   // src/main.ts
-  var ui0 = new UI("ws://192.168.234.227/ws", "go_button0", "estop0", "code_input0", "status0");
-  var ui1 = new UI("ws://192.168.4.117/ws", "go_button1", "estop1", "code_input1", "status1");
-  var CANVAS_GO = document.getElementById("canvas_go");
-  var canvas = document.getElementById("canvas");
-  canvas.width = canvas.clientWidth;
-  canvas.height = canvas.clientHeight;
+  var ui = new UI("ws://192.168.4.124/ws", "go_button0", "estop0", "code_input0", "status0");
 })();
 //# sourceMappingURL=bundle.js.map

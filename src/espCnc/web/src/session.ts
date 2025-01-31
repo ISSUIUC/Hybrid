@@ -1,4 +1,4 @@
-const CMD_TYPES = {
+export const CMD_TYPES = {
     StopNow: 0,
     StopAll: 1,
     StartAll: 2,
@@ -25,6 +25,7 @@ function concat(buffs: Uint8Array[]) {
 }
 
 export class MicroCommand{
+    index: number = 0;
     constructor(
         public command_type: number,
         public data?: Uint8Array,
@@ -81,6 +82,13 @@ export class EnableCommand implements Command {
     }
 }
 
+export class DelayCommand implements Command {
+    constructor(public micros: number){}
+    encode(): MicroCommand[] {
+        return new TimedMoveCommand(new Uint8Array(this.micros)).encode()
+    }
+}
+
 class NewTimingReferenceCommand implements Command {
     constructor(){}
     encode(): MicroCommand[] {
@@ -93,9 +101,8 @@ class ContinuousTimedSequenceCommand implements Command {
         if(sequence.length > MAX_CHUNK) throw new Error("Too big chunk");
     }
     encode(): MicroCommand[] {
-        console.log(this.sequence);
         let buff = new Uint8Array(this.sequence.byteLength + 4);
-        let u32 = new Uint32Array(buff.buffer);
+        let u32 = new Uint32Array(buff.buffer, 0, 1);
         u32[0] = this.sequence.length;
         buff.set(new Uint8Array(this.sequence.buffer, this.sequence.byteOffset, this.sequence.byteLength), 4);
 
@@ -113,7 +120,7 @@ export class TimedMoveCommand implements Command {
                 timing_commands.push((i - last_cmd_index) | (this.step_sequence[i] << 8));
                 last_cmd_index = i;
             }
-            if(i - last_cmd_index == 256) {
+            if(i - last_cmd_index == 255) {
                 timing_commands.push((i - last_cmd_index) | 0x00);
                 last_cmd_index = i;
             }   
@@ -131,13 +138,11 @@ export class TimedMoveCommand implements Command {
             parts.push(new ContinuousTimedSequenceCommand(chunk))
         }
 
-        console.log(parts);
-
         return new MultiCommmand(parts).encode()
     }
 }
 
-class MultiCommmand implements Command {
+export class MultiCommmand implements Command {
     constructor(public commands: Command[]){}
     encode(): MicroCommand[] {
         return this.commands.flatMap(cmd=>cmd.encode());
@@ -156,33 +161,103 @@ export class SetupCommand implements Command {
     }
 }
 
+//x = bit 2
+//y = bit 3
+//pencil = bit 1
+export class LineCommand implements Command {
+    constructor(public dst: [number,number]){}
+    encode(): MicroCommand[] {
+        //20 cm / rotation
+        const mm_per_step = 40 / (256 * 200);
+        const step_per_mm = 256 * 200 / 40;
+        const max_speed = 80;
+        const max_accel = 1000;
+        
+        let major_axis = Math.max(Math.abs(this.dst[0]), Math.abs(this.dst[1]));
+        let accel_time = max_speed / max_accel;
+        let accel_dist = accel_time**2 * max_accel / 2;
+
+        let pos = 0;
+        let dt = 1e-6;
+        
+        let steps = []
+        let i = 0;
+        let dist = 0;
+
+        let calc_step = (pos,dpos)=>{
+            let pos_steps = pos * step_per_mm;
+            let next_pos_steps = (pos + dpos) * step_per_mm;
+            let step = 0x00;
+            if(Math.round(pos_steps * this.dst[0] / major_axis) < Math.round(next_pos_steps * this.dst[0] / major_axis)) {
+                step |= 0x08;
+                dist += 1;
+            }
+            if(Math.round(pos_steps * this.dst[0] / major_axis) > Math.round(next_pos_steps * this.dst[0] / major_axis)) {
+                step |= 0x88;
+                dist -= 1;
+            }
+            if(Math.round(pos_steps * this.dst[1] / major_axis) < Math.round(next_pos_steps * this.dst[1] / major_axis)) {
+                step |= 0x01;
+            }
+            if(Math.round(pos_steps * this.dst[1] / major_axis) > Math.round(next_pos_steps * this.dst[1] / major_axis)) {
+                step |= 0x11;
+            }
+            return step;
+        }
+
+        for(; pos < major_axis / 2 && pos < accel_dist; i++) {
+            let vel = i * dt * max_accel;
+            steps.push(calc_step(pos, vel * dt));
+            pos += vel * dt;
+        }
+
+        while(pos < major_axis - accel_dist) {
+            let vel = i * dt * max_accel;
+            steps.push(calc_step(pos, vel * dt));
+            pos += vel * dt;
+        }
+
+        for(; pos < major_axis; i--) {
+            let vel = i * dt * max_accel;
+            steps.push(calc_step(pos, vel * dt));
+            pos += vel * dt;
+        }
+
+        return new TimedMoveCommand(new Uint8Array(steps)).encode();
+    }
+}
+
 export class ExecutionSession {
-    private cmd_index: number = 0;
-    constructor(private ws: WebSocket){}
-    private build_execution(commands: Command[], base_index: number): Uint8Array {
-        let chunks = [];
+    constructor(){}
+    compile_commands(commands: Command[], base_index: number): MicroCommand[] {
         let index = base_index;
+        let micro_commands = [];
+
         for(const cmd of commands) {
             let micros = cmd.encode();
             for(const micro of micros) {
-                let chunk = new Uint8Array(4 + (micro.data?.length | 0));
-                let u16 = new Uint16Array(chunk.buffer);
-                u16[0] = micro.command_type;
-                u16[1] = index;
-                if(micro.data){
-                    chunk.set(micro.data, 4);
-                }
-                chunks.push(chunk);
+                micro.index = index;
+                micro_commands.push(micro);
             }
             index ++;
         }
 
-        return concat(chunks);
+        return micro_commands;
     }
-    execute(commands: Command[]) {
-        const binary = this.build_execution(commands, this.cmd_index);
-        this.cmd_index += commands.length;
-        console.log(binary);
-        this.ws.send(binary);
+
+    serialize_micros(micros: MicroCommand[]): Uint8Array {
+        let chunks = [];
+        for(const micro of micros) {
+            let chunk = new Uint8Array(4 + (micro.data?.length | 0));
+            let u16 = new Uint16Array(chunk.buffer);
+            u16[0] = micro.command_type;
+            u16[1] = micro.index;
+            if(micro.data){
+                chunk.set(micro.data, 4);
+            }
+            chunks.push(chunk);
+        }
+
+        return concat(chunks);
     }
 }

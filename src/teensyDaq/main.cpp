@@ -1,6 +1,6 @@
 #include<Arduino.h>
 #include<Servo.h>
-#include<pins.h>
+#include"pins.h"
 
 class AnalogInput {
 public:
@@ -58,14 +58,14 @@ AnalogInput sense_5v(SENSE_5V_PIN, 5000, 1000);
 AnalogInput sense_9v(SENSE_9V_PIN, 5000, 1000);
 AnalogInput sense_6va(SENSE_6VA_PIN, 5000, 1000);
 AnalogInput sense_6vb(SENSE_6VB_PIN, 5000, 1000);
-AnalogInput sense_pyro_a(SENSE_PYROA_PIN, 5000, 1000);
+AnalogInput sense_pyro_a(SENSE_PYROA_PIN, 49900, 5000);
 AnalogInput sense_pyro_b(SENSE_PYROB_PIN, 5000, 1000);
 AnalogInput sense_pyro_0(SENSE_PYRO0_PIN, 5000, 1000);
-AnalogInput sense_pyro_1(SENSE_PYRO0_PIN, 5000, 1000);
+AnalogInput sense_pyro_1(SENSE_PYRO1_PIN, 5000, 1000);
 AnalogInput sense_pt_0(SENSE_P0_PIN, 5000, 1000);
-AnalogInput sense_pt_1(SENSE_P0_PIN, 5000, 1000);
-AnalogInput sense_pt_2(SENSE_P0_PIN, 5000, 1000);
-AnalogInput sense_pt_3(SENSE_P0_PIN, 5000, 1000);
+AnalogInput sense_pt_1(SENSE_P1_PIN, 5000, 1000);
+AnalogInput sense_pt_2(SENSE_P2_PIN, 5000, 1000);
+AnalogInput sense_pt_3(SENSE_P3_PIN, 5000, 1000);
 Pyro pyro_a(ARM_PYROA_PIN, FIRE_PYROA_PIN, sense_pyro_a);
 Pyro pyro_b(ARM_PYROB_PIN, FIRE_PYROB_PIN, sense_pyro_b);
 Servo servo_a;
@@ -95,25 +95,46 @@ void loop() {
     digitalWrite(LED1_PIN, v9_good);
     digitalWrite(LED2_PIN, v5_good);
     digitalWrite(LED3_PIN, true);
+    delay(2000);
+    servo_a.write(0);
+    servo_a.write(0);
+    delay(2000);
+    servo_a.write(180);
+    servo_a.write(180);
 
-    if(Serial.available()) {
-        int v = Serial.read();
-        if(v == 'a') {
-            servo_a.write(0);
-            servo_b.write(0);
-            Serial.println("0");
-        } else if(v == 'b'){
-            servo_a.write(180);
-            servo_b.write(180);
-            Serial.println("180");
-        } else if(v =='o'){
-            digitalWrite(SERVO_ENABLE_PIN, HIGH);
-            Serial.println("ON");
-        } else if(v =='f'){
-            digitalWrite(SERVO_ENABLE_PIN, LOW);
-            Serial.println("OFF");
-        }
-    }
+
+
+    // float v0 = sense_pyro_0.read();
+    // float v1 = sense_pyro_1.read();
+    // float v2 = sense_pt_2.read();
+    // float v3 = sense_pt_3.read();
+    // Serial.print(v0); Serial.print(" ");
+    // Serial.print(v1); Serial.print(" ");
+    // Serial.print(v2); Serial.print(" ");
+    // Serial.println(v3);
+    // if(Serial.available()) {
+    //     int v = Serial.read();
+    //     if(v == 'a') {
+    //         float v1 = sense_pyro_b.read();
+    //         pyro_b.arm();
+    //         delay(100);
+    //         float v2 = sense_pyro_b.read();
+    //         pyro_b.fire();
+    //         delay(100);
+    //         float v3 = sense_pyro_b.read();
+    //         pyro_b.unfire();
+    //         delay(100);
+    //         float v4 = sense_pyro_b.read();
+    //         pyro_b.disarm();
+    //         float v5 = sense_pyro_b.read();
+
+    //         Serial.print(v1); Serial.print(" ");
+    //         Serial.print(v2); Serial.print(" ");
+    //         Serial.print(v3); Serial.print(" ");
+    //         Serial.print(v4); Serial.print(" ");
+    //         Serial.println(v5);
+    //     }
+    // }
     // Serial.println(v9);
     // delay(1000);
     // pyro_a.arm();
