@@ -154,8 +154,8 @@
     encode() {
       const mm_per_step = 40 / (256 * 200);
       const step_per_mm = 256 * 200 / 40;
-      const max_speed = 80;
-      const max_accel = 1e3;
+      const max_speed = 200;
+      const max_accel = 200;
       let major_axis = Math.max(Math.abs(this.dst[0]), Math.abs(this.dst[1]));
       let accel_time = max_speed / max_accel;
       let accel_dist = accel_time ** 2 * max_accel / 2;
@@ -165,22 +165,26 @@
       let i = 0;
       let dist = 0;
       let calc_step = (pos2, dpos) => {
+        let x_forward = 4;
+        let x_backward = 68;
+        let y_forward = 8;
+        let y_backward = 136;
         let pos_steps = pos2 * step_per_mm;
         let next_pos_steps = (pos2 + dpos) * step_per_mm;
         let step = 0;
         if (Math.round(pos_steps * this.dst[0] / major_axis) < Math.round(next_pos_steps * this.dst[0] / major_axis)) {
-          step |= 8;
+          step |= x_forward;
           dist += 1;
         }
         if (Math.round(pos_steps * this.dst[0] / major_axis) > Math.round(next_pos_steps * this.dst[0] / major_axis)) {
-          step |= 136;
+          step |= x_backward;
           dist -= 1;
         }
         if (Math.round(pos_steps * this.dst[1] / major_axis) < Math.round(next_pos_steps * this.dst[1] / major_axis)) {
-          step |= 1;
+          step |= y_forward;
         }
         if (Math.round(pos_steps * this.dst[1] / major_axis) > Math.round(next_pos_steps * this.dst[1] / major_axis)) {
-          step |= 17;
+          step |= y_backward;
         }
         return step;
       };

@@ -13,6 +13,8 @@ public:
     void set_step_dir();
     void set_stealth_chop(bool stealth_chop);
     void set_cool_step(bool cool_step);
+    uint16_t get_stallguard();
+    void set_stallguard(uint8_t threshold);
     bool check_uart();
     void step() {
         digitalWrite(step_pin, HIGH);

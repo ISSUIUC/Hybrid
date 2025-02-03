@@ -170,8 +170,8 @@ export class LineCommand implements Command {
         //20 cm / rotation
         const mm_per_step = 40 / (256 * 200);
         const step_per_mm = 256 * 200 / 40;
-        const max_speed = 80;
-        const max_accel = 1000;
+        const max_speed = 200;
+        const max_accel = 200;
         
         let major_axis = Math.max(Math.abs(this.dst[0]), Math.abs(this.dst[1]));
         let accel_time = max_speed / max_accel;
@@ -185,22 +185,28 @@ export class LineCommand implements Command {
         let dist = 0;
 
         let calc_step = (pos,dpos)=>{
+            let x_forward = 0x04;
+            let x_backward = 0x44;
+            let y_forward = 0x08;
+            let y_backward = 0x88;
+
+
             let pos_steps = pos * step_per_mm;
             let next_pos_steps = (pos + dpos) * step_per_mm;
             let step = 0x00;
             if(Math.round(pos_steps * this.dst[0] / major_axis) < Math.round(next_pos_steps * this.dst[0] / major_axis)) {
-                step |= 0x08;
+                step |= x_forward;
                 dist += 1;
             }
             if(Math.round(pos_steps * this.dst[0] / major_axis) > Math.round(next_pos_steps * this.dst[0] / major_axis)) {
-                step |= 0x88;
+                step |= x_backward;
                 dist -= 1;
             }
             if(Math.round(pos_steps * this.dst[1] / major_axis) < Math.round(next_pos_steps * this.dst[1] / major_axis)) {
-                step |= 0x01;
+                step |= y_forward;
             }
             if(Math.round(pos_steps * this.dst[1] / major_axis) > Math.round(next_pos_steps * this.dst[1] / major_axis)) {
-                step |= 0x11;
+                step |= y_backward;
             }
             return step;
         }

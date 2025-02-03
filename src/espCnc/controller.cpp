@@ -61,3 +61,12 @@ void MotorController::set_step_dir() {
     tmc.moveUsingStepDirInterface();
 }
 
+uint16_t MotorController::get_stallguard() {
+    return tmc.getStallGuardResult();
+}
+
+void MotorController::set_stallguard(uint8_t thresh) {
+    tmc.setStallGuardThreshold(thresh);
+}
+
+

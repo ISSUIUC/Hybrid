@@ -232,8 +232,8 @@ void task_loop(void * args) {
     delay(10);
     Serial.print("Task loop started on core ");
     Serial.println(xPortGetCoreID());
-    size_t total_read = 0;
-    USB.webUSB(true);
+    // size_t total_read = 0;
+    // USB.webUSB(true);
     while(true) {
         // uint8_t buff[1024]{};
         // size_t ct = Serial.available();
@@ -246,7 +246,10 @@ void task_loop(void * args) {
         //     total_read += read;
         //     Serial.println(total_read);
         // }
-        delay(100);
+        uint16_t val = controllers[1].get_stallguard();
+        Serial.print(val);
+        Serial.println();
+        delay(200);
         size_t m = millis();
         digitalWrite(Pins::LED_0, (m / 500) % 2);
     }
@@ -328,9 +331,10 @@ void setup(){
     digitalWrite(Pins::LED_1, LOW);
     digitalWrite(Pins::LED_2, LOW);
     digitalWrite(Pins::LED_3, LOW);
+    digitalWrite(Pins::TP24, HIGH);
 
 
-    // xTaskCreatePinnedToCore(task_loop, "Task Loop", 8192, nullptr, 1, nullptr, 1);
+    xTaskCreatePinnedToCore(task_loop, "Task Loop", 8192, nullptr, 1, nullptr, 0);
     xTaskCreatePinnedToCore(step_loop, "Step Loop", 8192, nullptr, 1, nullptr, 1);
 }
 
