@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include <SPI.h>
 
+SX1268 radio(SPI, E22_CS, E22_BUSY, E22_DI01, E22_RXEN, E22_RESET);
+
 void setup(){
     Serial.begin(9600);
     while(!Serial.available());
@@ -28,9 +30,14 @@ void setup(){
     digitalWrite(E22_CS, HIGH);
     SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
 
-    E22_setup();
+
+    radio.setup();
+    radio.set_frequency(430000000);
+    radio.set_modulation_params(8, LORA_BW_250, LORA_CR_4_8, false);
+    radio.set_tx_power(22);
 }
 
 void loop() {
-    transmit();
+    radio.send((uint8_t*)"hello", 5);
+    delay(1000);
 }
