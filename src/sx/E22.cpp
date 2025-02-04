@@ -37,7 +37,7 @@ void SX1268::read_command(RadioCommands_t command, uint8_t* buffer, size_t size)
     spi.transfer((uint8_t)command);
     spi.transfer(0x00);
     for(size_t i = 0; i < size; i++){
-        buffer[0] = spi.transfer(0x00);
+        buffer[i] = spi.transfer(0x00);
     }
     spi.endTransaction();
     digitalWrite(pin_cs, HIGH);
@@ -250,6 +250,70 @@ void SX1268::set_tx_power(int8_t dbm) {
     set_tx_params(dbm, RADIO_RAMP_800_US);
 }
 
+void SX1268::clear_irq() {
+    uint8_t clear_irq[] = {
+        0xff,0xff //clear all
+    };
+    write_command(RADIO_CLR_IRQSTATUS, clear_irq, sizeof(clear_irq));
+}
+
+bool SX1268::recv(uint8_t* data, size_t len, size_t timeout_ms) {
+    if(len > 255) return false;
+    set_standby();
+    set_packet_params(10, LORA_PACKET_FIXED_LENGTH, len, LORA_CRC_OFF, LORA_IQ_NORMAL);
+    set_dio_irq_params(
+        IRQ_CRC_ERROR | IRQ_RX_DONE | IRQ_RX_TX_TIMEOUT,
+        IRQ_CRC_ERROR | IRQ_RX_DONE | IRQ_RX_TX_TIMEOUT,
+        IRQ_RADIO_NONE,
+        IRQ_RADIO_NONE);
+
+    size_t timeout = timeout_ms * TIME_DIVISION_PER_MS;
+    uint8_t timeout_buf[] = {
+        (uint8_t)((timeout >> 16) & 0xFF),
+        (uint8_t)((timeout >> 8) & 0xFF),
+        (uint8_t)((timeout >> 0) & 0xFF)
+    };
+
+    write_command(RADIO_SET_RX, timeout_buf, sizeof(timeout));
+    for(int i = 0; i < timeout + 10; i++){
+        if(digitalRead(pin_dio1)) {
+            Serial.print("time ");
+            Serial.println(i);
+            break;
+        }
+        delay(1);
+        if(i == timeout + 9) {
+            Serial.println("RX TIMEOUT");
+            return false;
+        }
+    }
+    uint8_t irq_buff[3]{};
+    read_command(RADIO_GET_IRQSTATUS, irq_buff, sizeof(irq_buff));
+    clear_irq();
+    uint16_t irq = irq_buff[1] + (irq_buff[2] << 8);
+    Serial.print("IRQ "); Serial.println(irq);
+    if(irq & IRQ_CRC_ERROR) {
+        Serial.println("CRC error");
+        return false;
+    } else if(irq & IRQ_RX_DONE) {
+        uint8_t packet_info[3]{};
+        read_command(RADIO_GET_RXBUFFERSTATUS, packet_info, sizeof(packet_info));
+
+        uint8_t packet_len = packet_info[1];
+        uint8_t packet_ptr = packet_info[2];
+        Serial.print("Packet len "); Serial.println(packet_len);
+        Serial.print("Packet ptr"); Serial.println(packet_ptr);
+
+        return true;
+    } else if(irq & IRQ_RX_TX_TIMEOUT) {
+        Serial.println("Timeout");
+        return false;
+    } else {
+        Serial.println("Unexpected interupt code");
+        return false;
+    }
+}
+
 bool SX1268::send(uint8_t* data, size_t len) {
     if(len > 255) return false;   
     set_standby();
@@ -271,10 +335,7 @@ bool SX1268::send(uint8_t* data, size_t len) {
             return false;
         }
     }
-    uint8_t clear_irq[] = {
-        0xff,0xff //clear all
-    };
-    write_command(RADIO_CLR_IRQSTATUS, clear_irq, sizeof(clear_irq));
+    clear_irq();
 
     return true;
 }

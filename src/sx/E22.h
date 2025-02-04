@@ -194,6 +194,8 @@ typedef enum
 #define XTAL_FREQ (double)32000000
 #define FREQ_DIV (double)pow(2.0, 25.0)
 #define FREQ_STEP (double)(XTAL_FREQ / FREQ_DIV)
+//15.625 us
+#define TIME_DIVISION_PER_MS 64
 
 class SX1268 {
 public:
@@ -206,6 +208,7 @@ public:
 	void set_modulation_params(uint8_t spreading_factor, RadioLoRaBandwidths_t bandwidth, RadioLoRaCodingRates_t cr, bool low_data_rate);
 	void set_tx_power(int8_t dbm);
 	bool send(uint8_t* data, size_t len);
+	bool recv(uint8_t* data, size_t len, size_t timeout_ms);
 
 private:
 	void wait_on_busy();
@@ -223,6 +226,7 @@ private:
 	void set_tx_params(int8_t power, RadioRampTimes_t ramp_time);
 	void set_standby();
 	void set_lora();
+	void clear_irq();
 
 	SPIClass& spi;
 	uint8_t pin_cs;

@@ -32,12 +32,25 @@ void setup(){
 
 
     radio.setup();
-    radio.set_frequency(430000000);
     radio.set_modulation_params(8, LORA_BW_250, LORA_CR_4_8, false);
+    radio.set_frequency(430000000);
     radio.set_tx_power(22);
-}
+    Serial.println("INIT");
 
+}
+int loops = 0;
 void loop() {
-    radio.send((uint8_t*)"hello", 5);
-    delay(1000);
+    uint8_t buff[64] {
+        loops++,
+        1,
+        2,
+        3,
+    };
+    radio.send(buff,64);
+    // if(radio.recv(buff,64, 1000)) {
+        // Serial.println("RECV");
+        // Serial.println(buff[0]);
+    // }
+
+    delay(300);
 }
