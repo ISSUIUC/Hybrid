@@ -1,6 +1,6 @@
-#include<Arduino.h>
 #include<Servo.h>
 #include"pins.h"
+#include<Arduino.h>
 
 class AnalogInput {
 public:
@@ -27,7 +27,8 @@ public:
         pinMode(arm_pin, OUTPUT);
         digitalWrite(arm_pin, LOW);
         pinMode(fire_pin, OUTPUT);
-        digitalWrite(fire_pin, LOW);
+        digitalWrite
+        (fire_pin, LOW);
     }
 
     void arm() {
@@ -95,57 +96,37 @@ void loop() {
     digitalWrite(LED1_PIN, v9_good);
     digitalWrite(LED2_PIN, v5_good);
     digitalWrite(LED3_PIN, true);
-    delay(2000);
-    servo_a.write(0);
-    servo_a.write(0);
-    delay(2000);
-    servo_a.write(180);
-    servo_a.write(180);
 
+    while (Serial.available())
+    {
+        int serialVal = Serial.read();
+        if(serialVal == 'o')
+        {
+            servo_a.write(180);
+            servo_b.write(180);
 
+        }else if(serialVal = 'c')
+        {
+            servo_a.write(0);
+            servo_b.write(0);
+        }
+    }
 
-    // float v0 = sense_pyro_0.read();
-    // float v1 = sense_pyro_1.read();
-    // float v2 = sense_pt_2.read();
-    // float v3 = sense_pt_3.read();
-    // Serial.print(v0); Serial.print(" ");
-    // Serial.print(v1); Serial.print(" ");
-    // Serial.print(v2); Serial.print(" ");
-    // Serial.println(v3);
-    // if(Serial.available()) {
-    //     int v = Serial.read();
-    //     if(v == 'a') {
-    //         float v1 = sense_pyro_b.read();
-    //         pyro_b.arm();
-    //         delay(100);
-    //         float v2 = sense_pyro_b.read();
-    //         pyro_b.fire();
-    //         delay(100);
-    //         float v3 = sense_pyro_b.read();
-    //         pyro_b.unfire();
-    //         delay(100);
-    //         float v4 = sense_pyro_b.read();
-    //         pyro_b.disarm();
-    //         float v5 = sense_pyro_b.read();
+    float a = 3.33261;
+    float b = -388.278;
+    //Sense pt0-4
+    float voltPT0 = (sense_pt_0.read()*682.518528)+b;
+    float voltPT1 = (sense_pt_1.read()*682.518528)+b;
+    float voltPT2 = (sense_pt_2.read()*682.518528)+b;
+    float voltPT3 = (sense_pt_3.read()*682.518528)+b;
 
-    //         Serial.print(v1); Serial.print(" ");
-    //         Serial.print(v2); Serial.print(" ");
-    //         Serial.print(v3); Serial.print(" ");
-    //         Serial.print(v4); Serial.print(" ");
-    //         Serial.println(v5);
-    //     }
-    // }
-    // Serial.println(v9);
-    // delay(1000);
-    // pyro_a.arm();
-    // pyro_a.fire();
-    // Serial.print(sense_pyro_a.read());
-    // Serial.print(" ");
-    // Serial.println(sense_pyro_b.read());
-    // delay(1000);
-    // pyro_a.unfire();
-    // pyro_a.disarm();
-    // Serial.print(sense_pyro_a.read());
-    // Serial.print(" ");
-    // Serial.println(sense_pyro_b.read());
+    Serial.print(voltPT0);
+    delay(10);
+    Serial.print(voltPT1);
+    delay(10);
+    Serial.print(voltPT2);
+    delay(10);
+    Serial.println(voltPT3);
+    delay(10);
+
 }
