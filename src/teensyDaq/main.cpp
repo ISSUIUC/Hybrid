@@ -100,12 +100,12 @@ void loop() {
     while (Serial.available())
     {
         int serialVal = Serial.read();
-        if(serialVal == 'o')
+        if(serialVal == 'c')
         {
-            servo_a.write(180);
-            servo_b.write(180);
+            servo_a.write(150);
+            servo_b.write(150);
 
-        }else if(serialVal = 'c')
+        }else if(serialVal = 'o')
         {
             servo_a.write(0);
             servo_b.write(0);
