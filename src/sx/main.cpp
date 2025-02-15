@@ -5,6 +5,7 @@
 
 SX1268 radio(SPI, E22_CS, E22_BUSY, E22_DI01, E22_RXEN, E22_RESET);
 
+
 void setup(){
     Serial.begin(9600);
     while(!Serial.available());
@@ -31,26 +32,28 @@ void setup(){
     SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
 
 
-    radio.setup();
-    radio.set_modulation_params(8, LORA_BW_250, LORA_CR_4_8, false);
-    radio.set_frequency(430000000);
-    radio.set_tx_power(22);
+    Serial.println((int)radio.setup());
+    Serial.println((int)radio.set_modulation_params(8, LORA_BW_250, LORA_CR_4_8, false));
+    Serial.println((int)radio.set_frequency(426150000));
+    Serial.println((int)radio.set_tx_power(22));
     Serial.println("INIT");
 
 }
 int loops = 0;
 void loop() {
     uint8_t buff[64] {
-        loops++,
+        0,
         1,
         2,
         3,
     };
-    radio.send(buff,64);
+    SX1268Error v = radio.send(buff, 64);
+    if(v != SX1268Error::NoError){
+        Serial.println((int)v);
+    }
+    delay(500); 
     // if(radio.recv(buff,64, 1000)) {
         // Serial.println("RECV");
         // Serial.println(buff[0]);
     // }
-
-    delay(300);
 }
