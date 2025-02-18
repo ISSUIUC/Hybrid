@@ -1,14 +1,15 @@
 #include"E22.h"
+#include "pins.h"
 
 #define DBG_PRINT(x) (void) 0
 #define SX1268Check(x) if((x) == SX1268Error::BusyTimeout) { return SX1268Error::BusyTimeout; }
 // #define DBG_PRINT(x) Serial.println(x);
 
 SX1268Error SX1268::wait_on_busy(){
-	int timeout = 1000;
+	int timeout = 1000000;
 	while (digitalRead(pin_busy) == HIGH)
 	{
-		delay(1);
+		delayMicroseconds(1);
 		timeout -= 1;
 		if (timeout < 0)
 		{
@@ -23,14 +24,20 @@ SX1268Error SX1268::write_command(RadioCommands_t command, uint8_t* buffer, size
     DBG_PRINT("write command start");
     SX1268Check(wait_on_busy());
 
-    digitalWrite(pin_cs, LOW);
-    spi.beginTransaction(spiSettings);
-    spi.transfer((uint8_t)command);
-    for(size_t i = 0; i < size; i++){
-        spi.transfer(buffer[i]);
+    uint8_t outbuffer[64]{};
+    uint8_t inbuffer[64]{};
+    outbuffer[0] = command;
+    for (unsigned int i = 0; i < size; i++) {
+        outbuffer[i + 1] = buffer[i];
     }
+    spi.beginTransaction(spiSettings);
+    digitalWrite(pin_cs, LOW);
+    digitalWrite(I2C_SCL, LOW);
+    
+    spi.transferBytes(outbuffer, inbuffer, size + 1);
     spi.endTransaction();
     digitalWrite(pin_cs, HIGH);
+    digitalWrite(I2C_SCL, HIGH);
     DBG_PRINT("write command end");
     SX1268Check(wait_on_busy());
 
@@ -42,6 +49,7 @@ SX1268Error SX1268::read_command(RadioCommands_t command, uint8_t* buffer, size_
     SX1268Check(wait_on_busy());
 
     digitalWrite(pin_cs, LOW);
+    digitalWrite(I2C_SCL, LOW);
     spi.beginTransaction(spiSettings);
     spi.transfer((uint8_t)command);
     spi.transfer(0x00);
@@ -50,6 +58,7 @@ SX1268Error SX1268::read_command(RadioCommands_t command, uint8_t* buffer, size_
     }
     spi.endTransaction();
     digitalWrite(pin_cs, HIGH);
+    digitalWrite(I2C_SCL, HIGH);
     DBG_PRINT("read command end");
     SX1268Check(wait_on_busy());
 
@@ -61,6 +70,7 @@ SX1268Error SX1268::write_buffer(uint8_t offest, const uint8_t* buffer, size_t s
     SX1268Check(wait_on_busy());
 
     digitalWrite(pin_cs, LOW);
+    digitalWrite(I2C_SCL, LOW);
     spi.beginTransaction(spiSettings);
     spi.transfer(RADIO_WRITE_BUFFER);
     spi.transfer(offest);
@@ -69,6 +79,7 @@ SX1268Error SX1268::write_buffer(uint8_t offest, const uint8_t* buffer, size_t s
     }
     spi.endTransaction();
     digitalWrite(pin_cs, HIGH);
+    digitalWrite(I2C_SCL, HIGH);
     DBG_PRINT("write buffer end");
     SX1268Check(wait_on_busy());
 
@@ -80,6 +91,7 @@ SX1268Error SX1268::write_registers(uint16_t address, uint8_t* buffer, size_t si
     SX1268Check(wait_on_busy());
 
     digitalWrite(pin_cs, LOW);
+    digitalWrite(I2C_SCL, LOW);
     spi.beginTransaction(spiSettings);
     spi.transfer(RADIO_WRITE_REGISTER);
     spi.transfer((address & 0xFF00) >> 8);
@@ -91,6 +103,7 @@ SX1268Error SX1268::write_registers(uint16_t address, uint8_t* buffer, size_t si
 
     spi.endTransaction();
     digitalWrite(pin_cs, HIGH);
+    digitalWrite(I2C_SCL, HIGH);
     DBG_PRINT("write buffer end");
     SX1268Check(wait_on_busy());
 
@@ -102,6 +115,7 @@ SX1268Error SX1268::read_buffer(uint8_t offset, uint8_t* buffer, size_t size) {
     SX1268Check(wait_on_busy());
 
     digitalWrite(pin_cs, LOW);
+    digitalWrite(I2C_SCL, LOW);
     spi.beginTransaction(spiSettings);
     spi.transfer(RADIO_READ_BUFFER);
     spi.transfer(offset); 
@@ -112,6 +126,7 @@ SX1268Error SX1268::read_buffer(uint8_t offset, uint8_t* buffer, size_t size) {
 
     spi.endTransaction();
     digitalWrite(pin_cs, HIGH);
+    digitalWrite(I2C_SCL, HIGH);
     DBG_PRINT("write buffer end");
     SX1268Check(wait_on_busy());
 
@@ -123,6 +138,7 @@ SX1268Error SX1268::read_registers(uint16_t address, uint8_t* buffer, size_t siz
     SX1268Check(wait_on_busy());
 
     digitalWrite(pin_cs, LOW);
+    digitalWrite(I2C_SCL, LOW);
     spi.beginTransaction(spiSettings);
     spi.transfer(RADIO_READ_REGISTER);
     spi.transfer((address & 0xFF00) >> 8);
@@ -133,6 +149,7 @@ SX1268Error SX1268::read_registers(uint16_t address, uint8_t* buffer, size_t siz
     }
     spi.endTransaction();
     digitalWrite(pin_cs, HIGH);
+    digitalWrite(I2C_SCL, HIGH);
     DBG_PRINT("read registers end");
     SX1268Check(wait_on_busy());
 
@@ -199,6 +216,7 @@ SX1268Error SX1268::setup(){
     pinMode(pin_rxen, OUTPUT);
     pinMode(pin_reset, OUTPUT);
     digitalWrite(pin_cs, HIGH);
+    digitalWrite(I2C_SCL, HIGH);
     digitalWrite(pin_reset, LOW);
     delay(10);
     digitalWrite(pin_reset, HIGH);
@@ -207,9 +225,6 @@ SX1268Error SX1268::setup(){
     SX1268Check(wait_on_busy());
     SX1268Check(set_standby());
     SX1268Check(set_packet_type(PACKET_TYPE_LORA));
-    SX1268Check(set_tx_power(22));
-    SX1268Check(set_base_address(0x00, 0x00));
-    SX1268Check(check_device_errors());
 
     return SX1268Error::NoError;
 }
@@ -308,8 +323,8 @@ SX1268Error SX1268::set_standby() {
     uint8_t STANDBY_RC = 0;
     SX1268Check(write_command(RADIO_SET_STANDBY, &STANDBY_RC, sizeof(STANDBY_RC)));
     uint8_t readback{};
-    SX1268Check(read_command(RADIO_GET_STATUS, &readback, sizeof(readback)));
-    if(readback & 0x20 == 0) return SX1268Error::FailedReadback;
+    // SX1268Check(read_command(RADIO_GET_STATUS, &readback, sizeof(readback)));
+    // if(readback & 0x20 == 0) return SX1268Error::FailedReadback;
 
 
     return SX1268Error::NoError;
@@ -319,11 +334,11 @@ SX1268Error SX1268::set_packet_type(RadioPacketType_t packet_type) {
     uint8_t type = packet_type;
     SX1268Check(write_command(RADIO_SET_PACKETTYPE, &type, sizeof(type)));
     uint8_t readback{};
-    SX1268Check(read_command(RADIO_GET_PACKETTYPE, &readback, sizeof(readback)));
+    // SX1268Check(read_command(RADIO_GET_PACKETTYPE, &readback, sizeof(readback)));
 
-    if(readback != type) {
-        return SX1268Error::FailedReadback;
-    }
+    // if(readback != type) {
+    //     return SX1268Error::FailedReadback;
+    // }
 
     return SX1268Error::NoError;
 }
@@ -413,10 +428,6 @@ SX1268Error SX1268::recv(uint8_t* data, size_t len, size_t timeout_ms) {
 
 SX1268Error SX1268::send(uint8_t* data, size_t len) {
     if(len > 255) return SX1268Error::BadParameter;
-    SX1268Check(set_standby());
-    SX1268Check(set_packet_type(PACKET_TYPE_LORA));
-    SX1268Check(set_frequency(frequency));
-    SX1268Check(set_tx_power(tx_power));
     SX1268Check(set_base_address(0x00, 0x00));
     SX1268Check(set_packet(data, len));
     SX1268Check(set_packet_params(10, LORA_PACKET_EXPLICIT, len, LORA_CRC_ON, LORA_IQ_NORMAL));
@@ -425,7 +436,6 @@ SX1268Error SX1268::send(uint8_t* data, size_t len) {
         IRQ_TX_DONE | IRQ_RX_TX_TIMEOUT,
         IRQ_RADIO_NONE,
         IRQ_RADIO_NONE));
-    SX1268Check(check_device_errors());
     uint8_t timeout[] = {0x00,0x00,0x00};
     SX1268Check(write_command(RADIO_SET_TX, timeout, sizeof(timeout)));
     for(int i = 0; i < 1000; i++){
