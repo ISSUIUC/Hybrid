@@ -1,6 +1,7 @@
-#include<Arduino.h>
-#include<TMC2209.h>
-#include<USB.h>
+#include <Arduino.h>
+#include <Wire.h>
+#include <TMC2209.h>
+#include <USB.h>
 #include "esp_pins.h"
 #include "gcode.h"
 #include "controller.h"
@@ -8,6 +9,7 @@
 #include "status.h"
 #include "panic.h"
 #include "wireless.h"
+#include <string>
 
 constexpr uint8_t leds[] = {
     Pins::LED_0,
@@ -84,9 +86,9 @@ constexpr const char * all_pins_names[] = {
 
 MotorController controllers[4] {
     MotorController(Pins::STEP_0, Pins::DIR_0, TMC2209::SERIAL_ADDRESS_0),
-    MotorController(Pins::STEP_1, Pins::DIR_1, TMC2209::SERIAL_ADDRESS_2),
     MotorController(Pins::STEP_2, Pins::DIR_2, TMC2209::SERIAL_ADDRESS_1),
     MotorController(Pins::STEP_3, Pins::DIR_3, TMC2209::SERIAL_ADDRESS_3),
+    MotorController(Pins::STEP_1, Pins::DIR_1, TMC2209::SERIAL_ADDRESS_2),
 };
 
 static uint8_t staging_buffer[16192]{};
@@ -129,6 +131,7 @@ int64_t execute_timing(const TimedCommand* cmds, size_t len, int64_t start_time)
         TimedCommand cmd = cmds[i];
         now += cmd.delay();
         delay_until_microseconds(now);
+        if(now + 10 < esp_timer_get_time()) now = esp_timer_get_time();
         for(int channel = 0; channel < 4; channel++){
             if(cmd.get_channel(channel)) {
                 controllers[channel].set_dir(cmd.get_direction(channel));
@@ -228,25 +231,31 @@ void on_command_message(uint8_t* ptr, size_t len) {
     staging_index = end - head;
 }
 
+
+float read_temp() {
+    Wire.beginTransmission(0x44);
+    uint8_t fd = 0xfd;
+    Wire.write(&fd,1);
+    Wire.endTransmission();
+    delay(10);
+    Wire.requestFrom(0x44,3);
+    uint8_t temp_reading[2]{};
+    Wire.readBytes(temp_reading, 2);
+    float temp = -45 + 175 * (temp_reading[0] * 256.0 + temp_reading[1]) / 65535;
+    return temp;
+}
+
 void task_loop(void * args) {
     delay(10);
     Serial.print("Task loop started on core ");
     Serial.println(xPortGetCoreID());
-    size_t total_read = 0;
-    USB.webUSB(true);
+    // USB.webUSB(true);
     while(true) {
-        // uint8_t buff[1024]{};
-        // size_t ct = Serial.available();
-        // if(ct != 0){
-        //     size_t max_read = std::min(ct, sizeof(buff));
-        //     size_t read = Serial.readBytes(buff, max_read);
-        //     if(max_read != read){
-        //         Serial.println("ERR Read Mismatch");
-        //     }
-        //     total_read += read;
-        //     Serial.println(total_read);
-        // }
-        delay(100);
+        float t0 = read_temp();
+
+        Serial.print("Temp: ");
+        Serial.println(t0);
+        delay(500);
         size_t m = millis();
         digitalWrite(Pins::LED_0, (m / 500) % 2);
     }
@@ -265,6 +274,7 @@ void step_loop(void * args) {
 
 void setup(){
     Serial.begin(460800);
+    Wire.begin(Pins::SDA_1, Pins::SCL);
     pinMode(Pins::LED_0, OUTPUT);
     pinMode(Pins::LED_1, OUTPUT);
     pinMode(Pins::LED_2, OUTPUT);
@@ -303,9 +313,9 @@ void setup(){
     digitalWrite(Pins::DIR_3, LOW);
     hardware_disable_all();
     
-    for(TimedCommand* buffer : timing_buffers) {
-        free_timing_buffers.send(buffer);
-    }
+    // for(TimedCommand* buffer : timing_buffers) {
+    //     free_timing_buffers.send(buffer);
+    // }
 
     Serial0.begin(115200);
     for(int i = 0; i < 4; i++){
@@ -321,17 +331,67 @@ void setup(){
     digitalWrite(Pins::LED_2, HIGH);
     digitalWrite(Pins::LED_3, HIGH);
 
-    set_data_callback(on_command_message);
-    setup_wifi("SJSK2", "srijanshukla");
+    // set_data_callback(on_command_message);
+    // setup_wifi("SJSK2", "srijanshukla");
+    // setup_wifi("foobar3", "25mjrn15");
+    delay(1000);
 
     digitalWrite(Pins::LED_0, LOW);
     digitalWrite(Pins::LED_1, LOW);
     digitalWrite(Pins::LED_2, LOW);
     digitalWrite(Pins::LED_3, LOW);
+    for(int i = 0; i < 4; i++) {
+        hardware_enable_all();
+        controllers[i].enable(true);
+    }
+    bool go = false;
+    bool dir = false;
+    int goal = 0;
+    int curr = 0;
+    std::string readGoal;
+    while(true) {
+        if(Serial.available()) {
+            int v = Serial.read();
+            if (isdigit(v)) {
+                readGoal += v;
+                Serial.println(static_cast<int>(v));
+            } else if (v == '\n' || v == '\r') {
+                Serial.println(readGoal.c_str());
+                goal = std::stoi(readGoal);
+                Serial.println(goal);
+                readGoal = "";
+                Serial.println("hello1");
+                dir = (goal > curr);
+                // Serial.println("Dir: " + dir);
+                go = true;
+                Serial.println("hello2");
+            } else if(v == 'a') {
+                dir = false;
+            } else if(v == 'f') {
+                hardware_disable_all();
+            } else if(v == 'o') {
+                hardware_enable_all();
+            } else if(v == 'd') {
+                dir = true;
+            } else if(v == 's') {
+                go = !go;
+            }
+        }
+        if(go) {
+            Serial.println("Hello3");
+            for(int i = 0; i < 4; i++) {
+                controllers[i].set_dir(dir);
+                controllers[i].step();
+            }
+            dir ? curr++ : curr--;
+            if (curr == goal) go = false;
+            Serial.println("Hello4");
+        }
+        delay(20);
+    }
 
-
-    // xTaskCreatePinnedToCore(task_loop, "Task Loop", 8192, nullptr, 1, nullptr, 1);
-    xTaskCreatePinnedToCore(step_loop, "Step Loop", 8192, nullptr, 1, nullptr, 1);
+    // xTaskCreatePinnedToCore(task_loop, "Task Loop", 8192, nullptr, 1, nullptr, 0);
+    // xTaskCreatePinnedToCore(step_loop, "Step Loop", 8192, nullptr, 1, nullptr, 1);
 }
 
 
