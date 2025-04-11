@@ -36,6 +36,12 @@ export type Command = {
     encode(): MicroCommand[];
 }
 
+export class NullCommand implements Command {
+    encode(): MicroCommand[] {
+        return []
+    }
+}
+
 export class EStopCommand implements Command {
     encode(): MicroCommand[] {
         return [new MicroCommand(CMD_TYPES.StopNow)]
@@ -165,15 +171,44 @@ export class SetupCommand implements Command {
 //y = bit 3
 //pencil = bit 1
 export class LineCommand implements Command {
-    constructor(public dst: [number,number]){}
+    constructor(public dst: [number,number,number,number]){}
     encode(): MicroCommand[] {
-        //20 cm / rotation
+        // let steps = []
+        // let pos = []
+
+        // for (let i = 0; i < 1000000; i++){
+        //     let t = Math.sqrt(i / 1e6) * 1000;
+        //     let a = 10;
+        //     let t1 = (i / 1e6)**2 * 1000;;
+        //     let a1 = 10;
+        //     pos.push(Math.sin(t*2*Math.PI)*a+Math.sin(t1*2*Math.PI)*a1)
+        // }
+
+        // for (let i = 0; i < pos.length - 1; i++){
+        //     if(Math.floor(pos[i]) - Math.floor(pos[i+1]) > 0){
+        //         steps.push(0xf);
+        //     } else if (Math.floor(pos[i]) - Math.floor(pos[i+1]) < 0) {
+        //         steps.push(0xff);
+        //     } else {
+        //         steps.push(0x00);
+        //     }
+        // }
+
+        // return new TimedMoveCommand(new Uint8Array(steps)).encode()
+        // 20 cm / rotation
         const mm_per_step = 40 / (256 * 200);
         const step_per_mm = 256 * 200 / 40;
-        const max_speed = 80;
-        const max_accel = 1000;
+        const f = 1.4
+        // const max_speed = 140;
+        // const max_accel = 4000;
+        // const max_speed = 60;
+        // const max_accel = 500;
+        // const max_speed = 130;
+        // const max_accel = 1500;
+        const max_speed = 100;
+        const max_accel = 100;
         
-        let major_axis = Math.max(Math.abs(this.dst[0]), Math.abs(this.dst[1]));
+        let major_axis = this.dst.reduce((a,b)=>Math.max(Math.abs(a),Math.abs(b)))
         let accel_time = max_speed / max_accel;
         let accel_dist = accel_time**2 * max_accel / 2;
 
@@ -188,19 +223,15 @@ export class LineCommand implements Command {
             let pos_steps = pos * step_per_mm;
             let next_pos_steps = (pos + dpos) * step_per_mm;
             let step = 0x00;
-            if(Math.round(pos_steps * this.dst[0] / major_axis) < Math.round(next_pos_steps * this.dst[0] / major_axis)) {
-                step |= 0x08;
-                dist += 1;
-            }
-            if(Math.round(pos_steps * this.dst[0] / major_axis) > Math.round(next_pos_steps * this.dst[0] / major_axis)) {
-                step |= 0x88;
-                dist -= 1;
-            }
-            if(Math.round(pos_steps * this.dst[1] / major_axis) < Math.round(next_pos_steps * this.dst[1] / major_axis)) {
-                step |= 0x01;
-            }
-            if(Math.round(pos_steps * this.dst[1] / major_axis) > Math.round(next_pos_steps * this.dst[1] / major_axis)) {
-                step |= 0x11;
+            for(let i = 0; i < 4; i++){
+                if(Math.round(pos_steps * this.dst[i] / major_axis) < Math.round(next_pos_steps * this.dst[i] / major_axis)) {
+                    step |= 0x01 << i;
+                    dist += 1;
+                }
+                if(Math.round(pos_steps * this.dst[i] / major_axis) > Math.round(next_pos_steps * this.dst[i] / major_axis)) {
+                    step |= 0x11 << i;
+                    dist -= 1;
+                }
             }
             return step;
         }
@@ -221,9 +252,19 @@ export class LineCommand implements Command {
             let vel = i * dt * max_accel;
             steps.push(calc_step(pos, vel * dt));
             pos += vel * dt;
-        }
+        }   
+        console.log(dist)
 
         return new TimedMoveCommand(new Uint8Array(steps)).encode();
+    }
+}
+
+export class WaitCommand implements Command{
+    constructor(public t) {
+
+    }
+    encode(): MicroCommand[] {
+        return new TimedMoveCommand(new Uint8Array(this.t * 1000000)).encode()
     }
 }
 

@@ -44,6 +44,7 @@ void setup_wifi(const char *ssid, const char *pass)
         Serial.println("Connecting");
         delay(1000);
     }
+    delay(2000);
     Serial.println(WiFi.localIP());
     ws.onEvent(onEvent);
     server.addHandler(&ws);

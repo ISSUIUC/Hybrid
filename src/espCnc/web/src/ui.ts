@@ -1,11 +1,12 @@
-import { Command, CoolStepCommand, EnableCommand, EStopCommand, ExecutionSession, LineCommand, MicroCommand, MicrostepsCommand, MultiCommmand, SetupCommand, StartCommand, StealthChopCommand, StopCommand, TimedMoveCommand } from "./session";
+import { Command, CoolStepCommand, EnableCommand, EStopCommand, ExecutionSession, LineCommand, MicroCommand, MicrostepsCommand, MultiCommmand, NullCommand, SetupCommand, StartCommand, StealthChopCommand, StopCommand, TimedMoveCommand, WaitCommand } from "./session";
 
 
 function assert_len<T>(arr: Array<T>, len: number) {
     if(arr.length != len) throw new Error(`Bad length (${arr.length} != ${len})`);
 }
 
-function parse_command(cmd: string[]) : Command {
+async function parse_command(cmd: string[]) : Promise<Command> {
+    if(cmd[0].startsWith("#")) return new NullCommand();
     if(cmd[0] == "start") {
         assert_len(cmd, 1);
         return new StartCommand();
@@ -31,37 +32,26 @@ function parse_command(cmd: string[]) : Command {
     } else if(cmd[0] == "setup") {
         assert_len(cmd, 1);
         return new SetupCommand();
-    } else if(cmd[0] == "test") {
-        return test_timing();
     } else if(cmd[0] == "line") {
-        assert_len(cmd, 3);
         let nums = cmd.slice(1).map(Number);
-        return new LineCommand([nums[0], nums[1]]);
+        if(nums.length == 4){
+            return new LineCommand([nums[0], nums[1], nums[2], nums[3]]);
+        }
+        if(nums.length == 1){
+            return new LineCommand([nums[0],nums[0],nums[0],nums[0]]);
+        }
+    } else if(cmd[0] == "wait") {
+        assert_len(cmd, 2);
+        let t = Number(cmd[1])
+        return new WaitCommand(t);
+    } else if(cmd[0] == "play") {
+        assert_len(cmd, 2);
+        let file_name = cmd[1];
+        let buff = await fetch(file_name).then(b=>b.arrayBuffer());
+        return new TimedMoveCommand(new Uint8Array(buff));
     } else {
         throw new Error("unknown " + cmd.toString());
     }
-}
-
-function position_function(t: number): number {
-    return 0.1*Math.cos(t*16);
-}
-
-function test_timing(): Command {
-    let cmds = []
-    let x = 0
-    let y = 0
-
-    for(let i = 0; i < 40; i++) {
-        let t = i / 4 * 2 * Math.PI;
-        let ex = Math.sin(t) * 30
-        let ey = Math.cos(t) * 30
-
-        cmds.push(new LineCommand([ex-x,ey-y]))
-        x = ex
-        y = ey
-    }
-    cmds.push(new LineCommand([-x,-y]))
-    return new MultiCommmand(cmds)
 }
 
 export class UI {
@@ -86,8 +76,8 @@ export class UI {
             let cmds = [new EStopCommand()];
             this.execute(cmds);
         });
-        this.go_button.addEventListener("click", ()=>{
-            this.upload_code();
+        this.go_button.addEventListener("click", async ()=>{
+            await this.upload_code();
         }) 
 
         if(ws_url) {
@@ -135,10 +125,11 @@ export class UI {
         let micros = this.session.compile_commands(cmds, 0);
         let binary = this.session.serialize_micros(micros);
         if(this.onMicros) this.onMicros(micros);
+        console.log("Binary size", binary.length)
         if(this.ws) this.ws.send(binary);
     }
 
-    upload_code() {
+    async upload_code() {
         const code = this.code.value;
         const lines = code.split('\n');
         const cmds = lines
@@ -148,7 +139,7 @@ export class UI {
 
         let commands = [];
         for(const cmd of cmds) {
-            commands.push(parse_command(cmd));
+            commands.push(await parse_command(cmd));
         }
 
         this.execute(commands);

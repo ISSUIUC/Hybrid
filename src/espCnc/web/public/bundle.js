@@ -30,6 +30,11 @@
     }
     index = 0;
   };
+  var NullCommand = class {
+    encode() {
+      return [];
+    }
+  };
   var EStopCommand = class {
     encode() {
       return [new MicroCommand(CMD_TYPES.StopNow)];
@@ -154,9 +159,10 @@
     encode() {
       const mm_per_step = 40 / (256 * 200);
       const step_per_mm = 256 * 200 / 40;
-      const max_speed = 80;
-      const max_accel = 1e3;
-      let major_axis = Math.max(Math.abs(this.dst[0]), Math.abs(this.dst[1]));
+      const f = 1.4;
+      const max_speed = 100;
+      const max_accel = 100;
+      let major_axis = this.dst.reduce((a, b) => Math.max(Math.abs(a), Math.abs(b)));
       let accel_time = max_speed / max_accel;
       let accel_dist = accel_time ** 2 * max_accel / 2;
       let pos = 0;
@@ -168,19 +174,15 @@
         let pos_steps = pos2 * step_per_mm;
         let next_pos_steps = (pos2 + dpos) * step_per_mm;
         let step = 0;
-        if (Math.round(pos_steps * this.dst[0] / major_axis) < Math.round(next_pos_steps * this.dst[0] / major_axis)) {
-          step |= 8;
-          dist += 1;
-        }
-        if (Math.round(pos_steps * this.dst[0] / major_axis) > Math.round(next_pos_steps * this.dst[0] / major_axis)) {
-          step |= 136;
-          dist -= 1;
-        }
-        if (Math.round(pos_steps * this.dst[1] / major_axis) < Math.round(next_pos_steps * this.dst[1] / major_axis)) {
-          step |= 1;
-        }
-        if (Math.round(pos_steps * this.dst[1] / major_axis) > Math.round(next_pos_steps * this.dst[1] / major_axis)) {
-          step |= 17;
+        for (let i2 = 0; i2 < 4; i2++) {
+          if (Math.round(pos_steps * this.dst[i2] / major_axis) < Math.round(next_pos_steps * this.dst[i2] / major_axis)) {
+            step |= 1 << i2;
+            dist += 1;
+          }
+          if (Math.round(pos_steps * this.dst[i2] / major_axis) > Math.round(next_pos_steps * this.dst[i2] / major_axis)) {
+            step |= 17 << i2;
+            dist -= 1;
+          }
         }
         return step;
       };
@@ -199,7 +201,16 @@
         steps.push(calc_step(pos, vel * dt));
         pos += vel * dt;
       }
+      console.log(dist);
       return new TimedMoveCommand(new Uint8Array(steps)).encode();
+    }
+  };
+  var WaitCommand = class {
+    constructor(t) {
+      this.t = t;
+    }
+    encode() {
+      return new TimedMoveCommand(new Uint8Array(this.t * 1e6)).encode();
     }
   };
   var ExecutionSession = class {
@@ -238,7 +249,8 @@
   function assert_len(arr, len) {
     if (arr.length != len) throw new Error(`Bad length (${arr.length} != ${len})`);
   }
-  function parse_command(cmd) {
+  async function parse_command(cmd) {
+    if (cmd[0].startsWith("#")) return new NullCommand();
     if (cmd[0] == "start") {
       assert_len(cmd, 1);
       return new StartCommand();
@@ -264,30 +276,26 @@
     } else if (cmd[0] == "setup") {
       assert_len(cmd, 1);
       return new SetupCommand();
-    } else if (cmd[0] == "test") {
-      return test_timing();
     } else if (cmd[0] == "line") {
-      assert_len(cmd, 3);
       let nums = cmd.slice(1).map(Number);
-      return new LineCommand([nums[0], nums[1]]);
+      if (nums.length == 4) {
+        return new LineCommand([nums[0], nums[1], nums[2], nums[3]]);
+      }
+      if (nums.length == 1) {
+        return new LineCommand([nums[0], nums[0], nums[0], nums[0]]);
+      }
+    } else if (cmd[0] == "wait") {
+      assert_len(cmd, 2);
+      let t = Number(cmd[1]);
+      return new WaitCommand(t);
+    } else if (cmd[0] == "play") {
+      assert_len(cmd, 2);
+      let file_name = cmd[1];
+      let buff = await fetch(file_name).then((b) => b.arrayBuffer());
+      return new TimedMoveCommand(new Uint8Array(buff));
     } else {
       throw new Error("unknown " + cmd.toString());
     }
-  }
-  function test_timing() {
-    let cmds = [];
-    let x = 0;
-    let y = 0;
-    for (let i = 0; i < 40; i++) {
-      let t = i / 4 * 2 * Math.PI;
-      let ex = Math.sin(t) * 30;
-      let ey = Math.cos(t) * 30;
-      cmds.push(new LineCommand([ex - x, ey - y]));
-      x = ex;
-      y = ey;
-    }
-    cmds.push(new LineCommand([-x, -y]));
-    return new MultiCommmand(cmds);
   }
   var UI = class {
     ws;
@@ -308,8 +316,8 @@
         let cmds = [new EStopCommand()];
         this.execute(cmds);
       });
-      this.go_button.addEventListener("click", () => {
-        this.upload_code();
+      this.go_button.addEventListener("click", async () => {
+        await this.upload_code();
       });
       if (ws_url) {
         this.ws = new WebSocket(ws_url);
@@ -354,15 +362,16 @@
       let micros = this.session.compile_commands(cmds, 0);
       let binary = this.session.serialize_micros(micros);
       if (this.onMicros) this.onMicros(micros);
+      console.log("Binary size", binary.length);
       if (this.ws) this.ws.send(binary);
     }
-    upload_code() {
+    async upload_code() {
       const code = this.code.value;
       const lines = code.split("\n");
       const cmds = lines.map((l) => l.toLowerCase()).map((l) => l.split(/\s/).filter((x) => x)).filter((x) => x.length);
       let commands = [];
       for (const cmd of cmds) {
-        commands.push(parse_command(cmd));
+        commands.push(await parse_command(cmd));
       }
       this.execute(commands);
     }
