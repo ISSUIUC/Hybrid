@@ -1,5 +1,4 @@
 .pio
 .vscode
 node_modules/
-lib
 *.glb
