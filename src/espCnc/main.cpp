@@ -345,6 +345,7 @@ void setup(){
     }
     bool go = false;
     bool dir = false;
+    int d = 2000;
     while(true) {
         if(Serial.available()) {
             int v = Serial.read();
@@ -358,6 +359,10 @@ void setup(){
                 dir = true;
             } else if(v == 's') {
                 go = !go;
+            } else if(v == 't') {
+                d *= 0.95;
+            } else if(v == 'g') {
+                d *= 1.05;
             }
         }
         if(go) {
@@ -366,7 +371,7 @@ void setup(){
                 controllers[i].step();
             }
         }
-        delay(20);
+        delayMicroseconds(d);
     }
 
     // xTaskCreatePinnedToCore(task_loop, "Task Loop", 8192, nullptr, 1, nullptr, 0);
