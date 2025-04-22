@@ -99,9 +99,10 @@ Queue<Command, 256> command_queue;
 Queue<TimedCommand*, TIMING_BUFFER_COUNT> free_timing_buffers;
 
 struct {
-    int delay_us = 2000;
-    int64_t now_time{};
-    std::array<int,4> position{};
+    int delay_us = 2000; //delay time for the motors
+    int64_t now_time{}; //time at setup?
+    std::array<int,4> position{}; //the current position
+    std::array<int,4> targetposition{};
 } motor_config;
 
 void hardware_enable_all() {
@@ -141,6 +142,72 @@ int64_t execute_timing(const TimedCommand* cmds, size_t len, int64_t start_time)
     }
     return now;
 }
+
+//target position needed for initial call to ensure that there is a target to point to
+void move_to_position(const std::array<int, 4>& target_position) {
+    
+//there are 4 controllers
+    bool isdonemoving = false;
+    while (!isdonemoving) {
+        
+
+
+        //get live position here from gps and update target position
+        //1 step = 1.8 divided by 8 -> degrees
+
+        //which channel for pitch
+        //which channel for yaw
+
+        //below works
+        isdonemoving = true;
+        for (int i = 0; i < 4; i++) {
+            int currentpos = motor_config.position[i];
+            int targetpos = target_position[i];
+            if (currentpos != targetpos) {
+                isdonemoving = false;
+            }
+        }
+        
+        
+        for (int i = 0; i < 4; i++) {
+            int currentpos = motor_config.position[i];
+            int targetpos = target_position[i];
+
+
+            if (currentpos < targetpos) { //forward
+
+                controllers[i].set_dir(true);
+                controllers[i].step();
+
+                motor_config.position[i]++;
+                //make it so that after every single little movement, it updates the target position
+                //make targetposition a global?
+                //updatetargetposition()
+                isdonemoving = false;
+
+            } else if (currentpos > targetpos) {//backward
+
+
+                controllers[i].set_dir(false);
+                controllers[i].step();
+
+                motor_config.position[i]--;
+                //make it so that after every single little movement, it updates the target position
+                //make targetposition a global?
+                //updatetargetposition()
+                isdonemoving = false;
+
+            }
+        }
+        delay(5);  
+    }
+    //end
+
+}
+
+
+
+
 
 void execute_cmd(const Command& cmd) {
     if(cmd.type == CommandType::StopAll){
@@ -272,32 +339,32 @@ void step_loop(void * args) {
 }
 
 void setup(){
-    Serial.begin(460800);
+    Serial.begin(9600);
     Wire.begin(Pins::SDA_1, Pins::SCL);
-    pinMode(Pins::LED_0, OUTPUT);
-    pinMode(Pins::LED_1, OUTPUT);
-    pinMode(Pins::LED_2, OUTPUT);
-    pinMode(Pins::LED_3, OUTPUT);
-    pinMode(Pins::ENN_0, OUTPUT);
-    pinMode(Pins::STEP_0, OUTPUT);
-    pinMode(Pins::DIR_0, OUTPUT);
-    pinMode(Pins::ENN_1, OUTPUT);
-    pinMode(Pins::STEP_1, OUTPUT);
-    pinMode(Pins::DIR_1, OUTPUT);
-    pinMode(Pins::ENN_2, OUTPUT);
-    pinMode(Pins::STEP_2, OUTPUT);
-    pinMode(Pins::DIR_2, OUTPUT);
-    pinMode(Pins::ENN_3, OUTPUT);
-    pinMode(Pins::STEP_3, OUTPUT);
-    pinMode(Pins::DIR_3, OUTPUT);
-    pinMode(Pins::TP22, OUTPUT);
-    pinMode(Pins::TP23, OUTPUT);
-    pinMode(Pins::TP24, OUTPUT);
-    pinMode(Pins::TP25, OUTPUT);
-    pinMode(Pins::TP26, OUTPUT);
+    // pinMode(Pins::LED_0, OUTPUT);
+    // pinMode(Pins::LED_1, OUTPUT);
+    // pinMode(Pins::LED_2, OUTPUT);
+    // pinMode(Pins::LED_3, OUTPUT);
+    // pinMode(Pins::ENN_0, OUTPUT);
+    // pinMode(Pins::STEP_0, OUTPUT);
+    // pinMode(Pins::DIR_0, OUTPUT);
+    // pinMode(Pins::ENN_1, OUTPUT);
+    // pinMode(Pins::STEP_1, OUTPUT);
+    // pinMode(Pins::DIR_1, OUTPUT);
+    // pinMode(Pins::ENN_2, OUTPUT);
+    // pinMode(Pins::STEP_2, OUTPUT);
+    // pinMode(Pins::DIR_2, OUTPUT);
+    // pinMode(Pins::ENN_3, OUTPUT);
+    // pinMode(Pins::STEP_3, OUTPUT);
+    // pinMode(Pins::DIR_3, OUTPUT);
+    // pinMode(Pins::TP22, OUTPUT);
+    // pinMode(Pins::TP23, OUTPUT);
+    // pinMode(Pins::TP24, OUTPUT);
+    // pinMode(Pins::TP25, OUTPUT);
+    // pinMode(Pins::TP26, OUTPUT);
     pinMode(Pins::TP27, OUTPUT);
     pinMode(Pins::TP28, OUTPUT);
-    pinMode(Pins::TP29, OUTPUT);
+    // pinMode(Pins::TP29, OUTPUT);
     digitalWrite(Pins::ENN_0, LOW);
     digitalWrite(Pins::STEP_0, LOW);
     digitalWrite(Pins::DIR_0, LOW);
@@ -316,6 +383,22 @@ void setup(){
         free_timing_buffers.send(buffer);
     }
 
+    int jkl = 300;
+    while (true) {
+
+        digitalWrite(Pins::TP27, HIGH);
+        digitalWrite(Pins::TP28, HIGH);
+        delay(1000);
+        digitalWrite(Pins::TP27, LOW);
+        digitalWrite(Pins::TP28, LOW);
+        delay(1000);
+        jkl--;
+        if (jkl < 0) {
+            break;
+        }
+    }
+    
+
     Serial0.begin(115200);
     for(int i = 0; i < 4; i++){
         if(!controllers[i].init()) {
@@ -329,6 +412,7 @@ void setup(){
     digitalWrite(Pins::LED_1, HIGH);
     digitalWrite(Pins::LED_2, HIGH);
     digitalWrite(Pins::LED_3, HIGH);
+    
 
     // set_data_callback(on_command_message);
     // setup_wifi("SJSK2", "srijanshukla");
@@ -339,12 +423,50 @@ void setup(){
     digitalWrite(Pins::LED_1, LOW);
     digitalWrite(Pins::LED_2, LOW);
     digitalWrite(Pins::LED_3, LOW);
+    
     for(int i = 0; i < 4; i++) {
         hardware_enable_all();
         controllers[i].enable(true);
     }
     bool go = false;
     bool dir = false;
+
+    
+    
+
+    std::array<int,4> testingposition{};
+
+    std::string testchannel0 = "";
+
+    delay(2000);
+
+    Serial.println("Put input");
+
+    Serial1.println("q");//still have to define serial1
+    
+    int i = 0;
+    while (true) {
+        if(Serial.available() && i < 4) {
+            char v = Serial.read();
+            Serial.println(v);
+            if (v != 'm') { //m means done with numbers
+                testchannel0 += v;
+            } else {
+                if (i < 4) {
+                    testingposition[i] = std::stoi(testchannel0);
+                    i++;
+                    testchannel0 = "";
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    //updateposition
+    
+    move_to_position(testingposition);
+
     while(true) {
         if(Serial.available()) {
             int v = Serial.read();
@@ -371,6 +493,10 @@ void setup(){
 
     // xTaskCreatePinnedToCore(task_loop, "Task Loop", 8192, nullptr, 1, nullptr, 0);
     // xTaskCreatePinnedToCore(step_loop, "Step Loop", 8192, nullptr, 1, nullptr, 1);
+}
+
+void updateposition() {
+    //update the position here when called
 }
 
 
