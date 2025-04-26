@@ -166,7 +166,9 @@ void loop() {
         } else if(serialVal == 'd') {
             disarm();
         } else if(serialVal == 'f') {
-            fire();
+            if(armed){
+                fire();
+            }
         }
     }
 
