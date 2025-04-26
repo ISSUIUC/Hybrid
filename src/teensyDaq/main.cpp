@@ -1,6 +1,7 @@
 #include<Servo.h>
 #include"pins.h"
 #include<Arduino.h>
+#include<HX711.h>
 
 class AnalogInput {
 public:
@@ -71,6 +72,54 @@ Pyro pyro_a(ARM_PYROA_PIN, FIRE_PYROA_PIN, sense_pyro_a);
 Pyro pyro_b(ARM_PYROB_PIN, FIRE_PYROB_PIN, sense_pyro_b);
 Servo servo_a;
 Servo servo_b;
+HX711 scale;
+#define BALLVALVE_OPEN_ANGLE 0
+#define BALLVAVLE_CLOSE_ANGLE 150
+#define FIRE_DELAY 3500
+
+float scale_reading = -1.0;
+uint32_t fire_time = 0;
+bool engage_ballvalve = false;
+bool armed = false;
+bool ballvalve_open = false;
+
+void open_ballvalve() {
+    servo_a.write(BALLVALVE_OPEN_ANGLE);
+    servo_b.write(BALLVALVE_OPEN_ANGLE);
+    ballvalve_open = true;
+}
+
+void close_ballvalve() {
+    servo_a.write(BALLVAVLE_CLOSE_ANGLE);
+    servo_b.write(BALLVAVLE_CLOSE_ANGLE);
+    ballvalve_open = false;
+}
+
+void arm() {
+    pyro_a.arm();
+    pyro_b.arm();
+    armed = true;
+}
+
+void disarm() {
+    pyro_a.disarm();
+    pyro_b.disarm();
+    armed = false;
+    engage_ballvalve = false;
+}
+
+void fire() {
+    pyro_a.fire();
+    pyro_b.fire();
+    fire_time = millis();
+    engage_ballvalve = true;
+    delay(10);
+    pyro_a.unfire();
+    pyro_b.unfire();
+    pyro_a.disarm();
+    pyro_b.disarm();
+    armed = false;
+}
 
 void setup() {
     Serial.begin(115200);
@@ -82,7 +131,15 @@ void setup() {
     pinMode(SERVO_ENABLE_PIN, OUTPUT);
     servo_a.attach(SERVO_A_PWM);
     servo_b.attach(SERVO_B_PWM);
+    close_ballvalve();
+    scale.begin(22, 23);
+    scale.set_scale(2886.5);
+    delay(500);
+    if(scale.is_ready()){
+        scale.tare();
+    }
 }
+
 
 void loop() {
     float v9 = sense_9v.read();
@@ -100,16 +157,22 @@ void loop() {
     while (Serial.available())
     {
         int serialVal = Serial.read();
-        if(serialVal == 'c')
-        {
-            servo_a.write(150);
-            servo_b.write(150);
-
-        }else if(serialVal = 'o')
-        {
-            servo_a.write(0);
-            servo_b.write(0);
+        if(serialVal == 'c') {
+            close_ballvalve();
+        } else if(serialVal == 'o') {
+            open_ballvalve();
+        } else if(serialVal == 'a') {
+            arm();
+        } else if(serialVal == 'd') {
+            disarm();
+        } else if(serialVal == 'f') {
+            fire();
         }
+    }
+
+    if(engage_ballvalve && (millis() > fire_time + FIRE_DELAY)) {
+        open_ballvalve();
+        engage_ballvalve = false;
     }
 
     float a = 3.33261;
@@ -119,14 +182,39 @@ void loop() {
     float voltPT1 = (sense_pt_1.read()*682.518528)+b;
     float voltPT2 = (sense_pt_2.read()*682.518528)+b;
     float voltPT3 = (sense_pt_3.read()*682.518528)+b;
+    float voltSenseA = sense_pyro_a.read();
+    float voltSenseB = sense_pyro_b.read();
+    float voltPyroIn0 = sense_pyro_0.read();
+    float voltPyroIn1 = sense_pyro_1.read();
 
+    if(scale.is_ready()) {
+        scale_reading = scale.get_units();
+    } 
+
+    Serial.print(millis());
+    Serial.print('\t');
     Serial.print(voltPT0);
-    delay(10);
+    Serial.print('\t');
     Serial.print(voltPT1);
-    delay(10);
+    Serial.print('\t');
     Serial.print(voltPT2);
+    Serial.print('\t');
+    Serial.print(voltPT3);
+    Serial.print('\t');
+    Serial.print(voltSenseA);
+    Serial.print('\t');
+    Serial.print(voltSenseB);
+    Serial.print('\t');
+    Serial.print(voltPyroIn0);
+    Serial.print('\t');
+    Serial.print(voltPyroIn1);
+    Serial.print('\t');
+    Serial.print(armed);
+    Serial.print('\t');
+    Serial.print(ballvalve_open);
+    Serial.print('\t');
+    Serial.print(engage_ballvalve);
+    Serial.print('\t');
+    Serial.println(scale_reading);
     delay(10);
-    Serial.println(voltPT3);
-    delay(10);
-
 }
