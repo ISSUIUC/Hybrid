@@ -113,7 +113,7 @@ void fire() {
     pyro_b.fire();
     fire_time = millis();
     engage_ballvalve = true;
-    delay(10);
+    delay(100);
     pyro_a.unfire();
     pyro_b.unfire();
     pyro_a.disarm();
