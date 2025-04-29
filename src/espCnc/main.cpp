@@ -9,6 +9,7 @@
 #include "status.h"
 #include "panic.h"
 #include "wireless.h"
+#include <SoftwareSerial.h>
 
 constexpr uint8_t leds[] = {
     Pins::LED_0,
@@ -49,6 +50,8 @@ constexpr uint8_t all_pins[] = {
     Pins::LED_1,
     Pins::LED_0,
 };
+
+SoftwareSerial test(Pins::TP28,Pins::TP27);//SDA to TP27
 
 constexpr const char * all_pins_names[] = {
     "Pins::DIR_0",
@@ -149,8 +152,6 @@ void move_to_position(const std::array<int, 4>& target_position) {
 //there are 4 controllers
     bool isdonemoving = false;
     while (!isdonemoving) {
-        
-
 
         //get live position here from gps and update target position
         //1 step = 1.8 divided by 8 -> degrees
@@ -384,28 +385,28 @@ void setup(){
     }
 
     int jkl = 300;
-    while (true) {
+    // while (true) {
 
-        digitalWrite(Pins::TP27, HIGH);
-        digitalWrite(Pins::TP28, HIGH);
-        delay(1000);
-        digitalWrite(Pins::TP27, LOW);
-        digitalWrite(Pins::TP28, LOW);
-        delay(1000);
-        jkl--;
-        if (jkl < 0) {
-            break;
-        }
-    }
+    //     //digitalWrite(Pins::TP27, HIGH);
+    //     //digitalWrite(Pins::TP28, HIGH);
+    //     delay(1000);
+    //     digitalWrite(Pins::TP27, LOW);
+    //     digitalWrite(Pins::TP28, LOW);
+    //     delay(1000);
+    //     jkl--;
+    //     if (jkl < 0) {
+    //         break;
+    //     }
+    // }
     
 
     Serial0.begin(115200);
-    for(int i = 0; i < 4; i++){
-        if(!controllers[i].init()) {
-            panic(i);
-        }
-        controllers[i].enable(true);
-    }
+    // for(int i = 0; i < 4; i++){
+    //     if(!controllers[i].init()) {
+    //         panic(i);
+    //     }
+    //     controllers[i].enable(true);
+    // }
 
     hardware_disable_all();
     digitalWrite(Pins::LED_0, HIGH);
@@ -434,38 +435,74 @@ void setup(){
     
     
 
-    std::array<int,4> testingposition{};
+    //std::array<int,4> testingposition{};
 
-    std::string testchannel0 = "";
+    //std::string testchannel0 = "";
 
     delay(2000);
 
-    Serial.println("Put input");
 
-    Serial1.println("q");//still have to define serial1
-    
-    int i = 0;
-    while (true) {
-        if(Serial.available() && i < 4) {
-            char v = Serial.read();
-            Serial.println(v);
-            if (v != 'm') { //m means done with numbers
-                testchannel0 += v;
-            } else {
-                if (i < 4) {
-                    testingposition[i] = std::stoi(testchannel0);
-                    i++;
-                    testchannel0 = "";
-                } else {
-                    break;
-                }
-            }
+    //this part is good?!
+    test.begin(9600);
+    Serial.println("Starting I2C...");
+    int poopy = 0;
+    while(true) {
+        if (test.available()) {
+            auto incoming = test.read();
+            test.write("Yay: ");
+            Serial.println("Yay: ");
+            Serial.println(incoming);
+            delay(500);
+        } else {
+            Serial.println("Nothing yet");
+            test.write("Not good oh no: ");
+            delay(500);
         }
+        poopy++;
     }
-
-    //updateposition
+    //above
     
-    move_to_position(testingposition);
+
+
+    // Serial.println("Put input");
+    // Serial1.println("q");//still have to define serial1
+    // int i = 0;
+    // while (true) {
+    //     if(Serial.available() && i < 4) {
+    //         char v = Serial.read();
+    //         Serial.println(v);
+    //         if (v != 'm') { //m means done with numbers
+    //             testchannel0 += v;
+    //         } else {
+    //             if (i < 4) {
+    //                 testingposition[i] = std::stoi(testchannel0);
+    //                 i++;
+    //                 testchannel0 = "";
+    //             } else {
+    //                 break;
+    //             }
+    //         }
+    //     }
+    // }
+
+    // //updateposition
+    
+    // move_to_position(testingposition);
+
+
+
+    // move to position -- already done
+
+    // while(true) {
+    //     if(test.available()) {
+    //      read from the serial -- focus -- convert to actual data
+    //      update the target position and currentposition -- focus -- once the data is turned into a target
+    //          position, then call the move to position function
+    //     }
+    //     move_to_position(testingposition); // once 
+    //     
+    //     delay(20);
+    // }
 
     while(true) {
         if(Serial.available()) {
@@ -495,10 +532,10 @@ void setup(){
     // xTaskCreatePinnedToCore(step_loop, "Step Loop", 8192, nullptr, 1, nullptr, 1);
 }
 
-void updateposition() {
-    //update the position here when called ashfasf
-    //test 1
-}
+// void updateposition() {
+//     //update the position here when called ashfasf
+//     //test 1
+// }
 
 
 void loop(){

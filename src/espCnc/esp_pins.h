@@ -89,8 +89,10 @@ namespace Pins {
     constexpr uint8_t TP24 = 34;
     constexpr uint8_t TP25 = 35;
     constexpr uint8_t TP26 = 36;
-    constexpr uint8_t TP27 = 37;
-    constexpr uint8_t TP28 = 38;
+
+    constexpr uint8_t TP27 = 37;//TX
+    constexpr uint8_t TP28 = 38;//RX
+
     constexpr uint8_t TP29 = 39;
     constexpr uint8_t LED_3 = 40;
     constexpr uint8_t LED_2 = 41;
