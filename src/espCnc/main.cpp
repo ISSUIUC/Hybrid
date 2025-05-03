@@ -448,15 +448,15 @@ void setup(){
     int poopy = 0;
     while(true) {
         if (test.available()) {
-            auto incoming = test.read();
-            test.write("Yay: ");
-            Serial.println("Yay: ");
-            Serial.println(incoming);
-            delay(500);
+            //test.write(99);
+            char incoming = test.read();
+            Serial.print(incoming);
+            delay(1);
         } else {
-            Serial.println("Nothing yet");
-            test.write("Not good oh no: ");
-            delay(500);
+            //Serial.println("Nothing yet");
+            //test.write("Not good oh no: ");
+            test.write(99);
+            delay(100);
         }
         poopy++;
     }
