@@ -157,10 +157,10 @@
       this.dst = dst;
     }
     encode() {
-      const mm_per_step = 40 / (256 * 200);
-      const step_per_mm = 256 * 200 / 40;
+      const micros = 8;
+      const step_per_mm = micros * 200 / 8;
       const f = 1.4;
-      const max_speed = 100;
+      const max_speed = 20;
       const max_accel = 100;
       let major_axis = this.dst.reduce((a, b) => Math.max(Math.abs(a), Math.abs(b)));
       let accel_time = max_speed / max_accel;
@@ -303,21 +303,27 @@
     estop;
     code;
     status;
+    redo;
+    last_binary;
     onMicros = null;
     waiting_promises = [];
     session;
-    constructor(ws_url, go_id, estop_id, code_id, status_id) {
+    constructor(ws_url, go_id, estop_id, redo_id, code_id, status_id) {
       this.session = new ExecutionSession();
       this.code = document.getElementById(code_id);
       this.go_button = document.getElementById(go_id);
       this.estop = document.getElementById(estop_id);
       this.status = document.getElementById(status_id);
+      this.redo = document.getElementById(redo_id);
       this.estop.addEventListener("click", () => {
         let cmds = [new EStopCommand()];
         this.execute(cmds);
       });
       this.go_button.addEventListener("click", async () => {
         await this.upload_code();
+      });
+      this.redo.addEventListener("click", () => {
+        this.resend_last();
       });
       if (ws_url) {
         this.ws = new WebSocket(ws_url);
@@ -363,7 +369,11 @@
       let binary = this.session.serialize_micros(micros);
       if (this.onMicros) this.onMicros(micros);
       console.log("Binary size", binary.length);
+      this.last_binary = binary;
       if (this.ws) this.ws.send(binary);
+    }
+    resend_last() {
+      if (this.ws && this.last_binary) this.ws.send(this.last_binary);
     }
     async upload_code() {
       const code = this.code.value;
@@ -383,6 +393,6 @@
   };
 
   // src/main.ts
-  var ui = new UI("ws://192.168.4.124/ws", "go_button0", "estop0", "code_input0", "status0");
+  var ui = new UI("ws://192.168.234.193/ws", "go_button0", "estop0", "redo0", "code_input0", "status0");
 })();
 //# sourceMappingURL=bundle.js.map

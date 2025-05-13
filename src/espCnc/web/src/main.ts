@@ -1,7 +1,7 @@
 import { DelayCommand, ExecutionSession, StartCommand, StopCommand } from "./session";
 import { UI } from "./ui";
 
-const ui = new UI("ws://192.168.4.124/ws", "go_button0", "estop0", "code_input0", "status0");
+const ui = new UI("ws://192.168.234.193/ws", "go_button0", "estop0", "redo0", "code_input0", "status0");
 // const ui = new UI("ws://192.168.234.193/ws", "go_button0", "estop0", "code_input0", "status0");
 
 // const live_ports: SerialPort[] = [];

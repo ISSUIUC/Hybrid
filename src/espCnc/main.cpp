@@ -85,9 +85,9 @@ constexpr const char * all_pins_names[] = {
 
 MotorController controllers[4] {
     MotorController(Pins::STEP_0, Pins::DIR_0, TMC2209::SERIAL_ADDRESS_0),
-    MotorController(Pins::STEP_2, Pins::DIR_2, TMC2209::SERIAL_ADDRESS_1),
     MotorController(Pins::STEP_3, Pins::DIR_3, TMC2209::SERIAL_ADDRESS_3),
     MotorController(Pins::STEP_1, Pins::DIR_1, TMC2209::SERIAL_ADDRESS_2),
+    MotorController(Pins::STEP_2, Pins::DIR_2, TMC2209::SERIAL_ADDRESS_1),
 };
 
 static uint8_t staging_buffer[16192]{};
@@ -109,6 +109,7 @@ void hardware_enable_all() {
     digitalWrite(Pins::ENN_1, LOW);
     digitalWrite(Pins::ENN_2, LOW);
     digitalWrite(Pins::ENN_3, LOW);
+    digitalWrite(Pins::TP24, HIGH);
 }
 
 void hardware_disable_all() {
@@ -116,6 +117,7 @@ void hardware_disable_all() {
     digitalWrite(Pins::ENN_1, HIGH);
     digitalWrite(Pins::ENN_2, HIGH);
     digitalWrite(Pins::ENN_3, HIGH);
+    digitalWrite(Pins::TP24, LOW);
 }
 
 void delay_until_microseconds(uint64_t end) {
@@ -330,10 +332,10 @@ void setup(){
     digitalWrite(Pins::LED_2, HIGH);
     digitalWrite(Pins::LED_3, HIGH);
 
-    // set_data_callback(on_command_message);
+    set_data_callback(on_command_message);
     // setup_wifi("SJSK2", "srijanshukla");
-    // setup_wifi("foobar3", "25mjrn15");
-    delay(1000);
+    setup_wifi("foobar3", "25mjrn15");
+    // delay(1000);
 
     digitalWrite(Pins::LED_0, LOW);
     digitalWrite(Pins::LED_1, LOW);
@@ -343,34 +345,9 @@ void setup(){
         hardware_enable_all();
         controllers[i].enable(true);
     }
-    bool go = false;
-    bool dir = false;
-    while(true) {
-        if(Serial.available()) {
-            int v = Serial.read();
-            if(v == 'a') {
-                dir = false;
-            } else if(v == 'f') {
-                hardware_disable_all();
-            } else if(v == 'o') {
-                hardware_enable_all();
-            } else if(v == 'd') {
-                dir = true;
-            } else if(v == 's') {
-                go = !go;
-            }
-        }
-        if(go) {
-            for(int i = 0; i < 4; i++) {
-                controllers[i].set_dir(dir);
-                controllers[i].step();
-            }
-        }
-        delay(20);
-    }
-
-    // xTaskCreatePinnedToCore(task_loop, "Task Loop", 8192, nullptr, 1, nullptr, 0);
-    // xTaskCreatePinnedToCore(step_loop, "Step Loop", 8192, nullptr, 1, nullptr, 1);
+    
+    xTaskCreatePinnedToCore(task_loop, "Task Loop", 8192, nullptr, 1, nullptr, 0);
+    xTaskCreatePinnedToCore(step_loop, "Step Loop", 8192, nullptr, 1, nullptr, 1);
 }
 
 

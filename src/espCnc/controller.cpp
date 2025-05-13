@@ -14,10 +14,14 @@ bool MotorController::init(){
     }
     tmc.enableAutomaticCurrentScaling();
     tmc.enableAutomaticGradientAdaptation();
+    // tmc.disableAutomaticCurrentScaling();
+    // tmc.disableAutomaticGradientAdaptation();
     tmc.setAllCurrentValues(100,100,100);
     tmc.setMicrostepsPerStep(8);
     tmc.enableStealthChop();
     tmc.enableCoolStep();
+    // tmc.disableStealthChop();
+    // tmc.disableCoolStep();
     return true;
 }
 

@@ -60,16 +60,19 @@ export class UI {
     estop: HTMLButtonElement;
     code: HTMLTextAreaElement;
     status: HTMLDivElement;
+    redo: HTMLButtonElement;
+    last_binary: Uint8Array;
     onMicros: ((cmds: MicroCommand[])=>void) = null;
     private waiting_promises: {n: number, res: ()=>void}[] = [];
     session: ExecutionSession;
-    constructor(ws_url: string, go_id: string, estop_id: string, code_id: string, status_id: string){
+    constructor(ws_url: string, go_id: string, estop_id: string, redo_id: string, code_id: string, status_id: string){
         this.session = new ExecutionSession();
 
         this.code = document.getElementById(code_id) as HTMLTextAreaElement;
         this.go_button = document.getElementById(go_id) as HTMLButtonElement;
         this.estop = document.getElementById(estop_id) as HTMLButtonElement;
         this.status = document.getElementById(status_id) as HTMLDivElement;
+        this.redo = document.getElementById(redo_id) as HTMLButtonElement;
 
         
         this.estop.addEventListener("click", ()=>{
@@ -79,6 +82,9 @@ export class UI {
         this.go_button.addEventListener("click", async ()=>{
             await this.upload_code();
         }) 
+        this.redo.addEventListener("click", ()=>{
+            this.resend_last()
+        })
 
         if(ws_url) {
             this.ws = new WebSocket(ws_url);
@@ -126,7 +132,12 @@ export class UI {
         let binary = this.session.serialize_micros(micros);
         if(this.onMicros) this.onMicros(micros);
         console.log("Binary size", binary.length)
+        this.last_binary = binary
         if(this.ws) this.ws.send(binary);
+    }
+
+    resend_last() {
+        if(this.ws && this.last_binary) this.ws.send(this.last_binary);
     }
 
     async upload_code() {

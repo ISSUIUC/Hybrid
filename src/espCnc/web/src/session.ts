@@ -196,8 +196,9 @@ export class LineCommand implements Command {
 
         // return new TimedMoveCommand(new Uint8Array(steps)).encode()
         // 20 cm / rotation
-        const mm_per_step = 40 / (256 * 200);
-        const step_per_mm = 256 * 200 / 40;
+        const micros = 8
+        const step_per_mm = (micros * 200) / 8;
+        // const step_per_mm = micros * 200 / 40;
         const f = 1.4
         // const max_speed = 140;
         // const max_accel = 4000;
@@ -205,7 +206,7 @@ export class LineCommand implements Command {
         // const max_accel = 500;
         // const max_speed = 130;
         // const max_accel = 1500;
-        const max_speed = 100;
+        const max_speed = 20;
         const max_accel = 100;
         
         let major_axis = this.dst.reduce((a,b)=>Math.max(Math.abs(a),Math.abs(b)))
