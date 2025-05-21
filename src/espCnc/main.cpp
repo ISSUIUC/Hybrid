@@ -6,110 +6,29 @@
 #include "gcode.h"
 #include "controller.h"
 #include "queue.h"
-#include "status.h"
 #include "panic.h"
-#include "wireless.h"
+#include "GCodeParser.h"
+#include "PathExecute.h"
 
-constexpr uint8_t leds[] = {
-    Pins::LED_0,
-    Pins::LED_1,
-    Pins::LED_2,
-    Pins::LED_3,
-};
-
-constexpr uint8_t all_pins[] = {
-    Pins::DIR_0,
-    Pins::STEP_0,
-    Pins::SDA_0,
-    Pins::ENN_0,
-    Pins::DIR_3,
-    Pins::SDA_3,
-    Pins::STEP_3,
-    Pins::ENN_3,
-    Pins::SCL,
-    Pins::DIR_1,
-    Pins::STEP_1,
-    Pins::SDA_1,
-    Pins::ENN_1,
-    Pins::DIR_2,
-    Pins::STEP_2,
-    Pins::SDA_2,
-    Pins::ENN_2,
-    Pins::SDA,
-    Pins::TP22,
-    Pins::TP23,
-    Pins::TP24,
-    Pins::TP25,
-    Pins::TP26,
-    Pins::TP27,
-    Pins::TP28,
-    Pins::TP29,
-    Pins::LED_3,
-    Pins::LED_2,
-    Pins::LED_1,
-    Pins::LED_0,
-};
-
-constexpr const char * all_pins_names[] = {
-    "Pins::DIR_0",
-    "Pins::STEP_0",
-    "Pins::SDA_0",
-    "Pins::ENN_0",
-    "Pins::DIR_3",
-    "Pins::SDA_3",
-    "Pins::STEP_3",
-    "Pins::ENN_3",
-    "Pins::SCL",
-    "Pins::DIR_1",
-    "Pins::STEP_1",
-    "Pins::SDA_1",
-    "Pins::ENN_1",
-    "Pins::DIR_2",
-    "Pins::STEP_2",
-    "Pins::SDA_2",
-    "Pins::ENN_2",
-    "Pins::SDA",
-    "Pins::TP22",
-    "Pins::TP23",
-    "Pins::TP24",
-    "Pins::TP25",
-    "Pins::TP26",
-    "Pins::TP27",
-    "Pins::TP28",
-    "Pins::TP29",
-    "Pins::LED_3",
-    "Pins::LED_2",
-    "Pins::LED_1",
-    "Pins::LED_0",
-};
+Queue<Command, 32> queued_commands;
 
 MotorController controllers[4] {
-    MotorController(Pins::STEP_0, Pins::DIR_0, TMC2209::SERIAL_ADDRESS_0),
-    MotorController(Pins::STEP_3, Pins::DIR_3, TMC2209::SERIAL_ADDRESS_3),
-    MotorController(Pins::STEP_1, Pins::DIR_1, TMC2209::SERIAL_ADDRESS_2),
-    MotorController(Pins::STEP_2, Pins::DIR_2, TMC2209::SERIAL_ADDRESS_1),
+    MotorController(Pins::STEP_0, Pins::DIR_0, TMC2209::SERIAL_ADDRESS_0, 40, 20), //XAxis
+    MotorController(Pins::STEP_3, Pins::DIR_3, TMC2209::SERIAL_ADDRESS_3, 8,  20), //YAxis
+    MotorController(Pins::STEP_1, Pins::DIR_1, TMC2209::SERIAL_ADDRESS_2, 8,  5), //ZAxis
+    MotorController(Pins::STEP_2, Pins::DIR_2, TMC2209::SERIAL_ADDRESS_1, 8,  20), //AAxis
 };
-
-static uint8_t staging_buffer[16192]{};
-size_t staging_index{};
-static constexpr size_t TIMING_CHUNK_SIZE = 4096;
-static constexpr size_t TIMING_BUFFER_COUNT = 22;
-static TimedCommand timing_buffers[TIMING_BUFFER_COUNT][TIMING_CHUNK_SIZE]{};
-Queue<Command, 256> command_queue;
-Queue<TimedCommand*, TIMING_BUFFER_COUNT> free_timing_buffers;
-
-struct {
-    int delay_us = 2000;
-    int64_t now_time{};
-    std::array<int,4> position{};
-} motor_config;
 
 void hardware_enable_all() {
     digitalWrite(Pins::ENN_0, LOW);
     digitalWrite(Pins::ENN_1, LOW);
     digitalWrite(Pins::ENN_2, LOW);
     digitalWrite(Pins::ENN_3, LOW);
-    digitalWrite(Pins::TP24, HIGH);
+    digitalWrite(Pins::FanControl, HIGH);
+    for(MotorController& controller: controllers) {
+        controller.init();
+        controller.enable(true);
+    }
 }
 
 void hardware_disable_all() {
@@ -117,7 +36,7 @@ void hardware_disable_all() {
     digitalWrite(Pins::ENN_1, HIGH);
     digitalWrite(Pins::ENN_2, HIGH);
     digitalWrite(Pins::ENN_3, HIGH);
-    digitalWrite(Pins::TP24, LOW);
+    digitalWrite(Pins::FanControl, LOW);
 }
 
 void delay_until_microseconds(uint64_t end) {
@@ -125,113 +44,6 @@ void delay_until_microseconds(uint64_t end) {
         NOP();
     }
 }
-
-int64_t execute_timing(const TimedCommand* cmds, size_t len, int64_t start_time) {
-    int64_t now = start_time;
-    for(int i = 0; i < len; i++){
-        TimedCommand cmd = cmds[i];
-        now += cmd.delay();
-        delay_until_microseconds(now);
-        if(now + 10 < esp_timer_get_time()) now = esp_timer_get_time();
-        for(int channel = 0; channel < 4; channel++){
-            if(cmd.get_channel(channel)) {
-                controllers[channel].set_dir(cmd.get_direction(channel));
-                controllers[channel].step();
-                motor_config.position[channel] += cmd.get_direction(channel) ? 1 : -1;
-            }
-        }
-    }
-    return now;
-}
-
-void execute_cmd(const Command& cmd) {
-    if(cmd.type == CommandType::StopAll){
-        hardware_disable_all();
-    } else if(cmd.type == CommandType::StartAll){
-        hardware_enable_all();
-    } else if(cmd.type == CommandType::Enable){
-        for(int i = 0; i < 4; i++){
-            controllers[i].enable(cmd.enable[i]);
-        }
-    } else if(cmd.type == CommandType::SetMicrosteps){
-        for(int i = 0; i < 4; i++){
-            controllers[i].set_microsteps(cmd.microsteps[i]);
-        }
-    } else if(cmd.type == CommandType::StealthChop) {
-        for(int i = 0; i < 4; i++){
-            controllers[i].set_stealth_chop(cmd.enable[i]);
-        }
-    } else if(cmd.type == CommandType::CoolStep) {
-        for(int i = 0; i < 4; i++){
-            controllers[i].set_cool_step(cmd.enable[i]);
-        }
-    } else if(cmd.type == CommandType::Timed) {
-        motor_config.now_time = execute_timing(cmd.timing_data.ptr, cmd.timing_data.count, motor_config.now_time);
-        free_timing_buffers.send(cmd.timing_data.ptr);
-    } else if(cmd.type == CommandType::NewTimingReference) {
-        motor_config.now_time = esp_timer_get_time();
-    } else {
-        Serial.print("Unknown command "); Serial.print((int)cmd.type);
-        panic(13);
-    }
-}
-
-void flush_command_queue() {
-    Command cmd;
-    while(command_queue.receive(&cmd)) {
-        if(cmd.type == CommandType::Timed) {
-            free_timing_buffers.send(cmd.timing_data.ptr);
-        }
-    }
-}
-
-void on_command_message(uint8_t* ptr, size_t len) {
-    if(staging_index + len > sizeof(staging_buffer)) { 
-        Serial.print("Staging index "); Serial.println(staging_index);
-        Serial.print("len "); Serial.println(len);
-        panic(10); 
-    }
-
-    memcpy(staging_buffer + staging_index, ptr, len);
-    staging_index += len;
-
-    uint8_t* head = staging_buffer;
-    uint8_t* end = staging_buffer + staging_index;
-    while(end - head >= sizeof(CommandHeader)) {
-        Command cmd{};
-        memcpy(&cmd, head, Command::HEADER_SIZE);
-        if(Command::HEADER_SIZE + cmd.body_size() > end - head) {
-            break;
-        }
-        memcpy(&cmd, head, Command::HEADER_SIZE + cmd.body_size());
-
-        if(cmd.type == CommandType::StopNow) {
-            Serial.println("EStop");
-            hardware_disable_all();
-            flush_command_queue();
-        } else if(cmd.type == CommandType::Timed) {
-            if(cmd.full_size() > end - head) {
-                break;
-            };
-            if(cmd.timing_data.count > TIMING_CHUNK_SIZE) { panic(11); };
-
-            TimedCommand* chunk{};
-            if(!free_timing_buffers.receive_wait(&chunk)) { panic(6); }
-
-            memcpy(chunk, head + Command::HEADER_SIZE + cmd.body_size(), cmd.timing_data.count * sizeof(TimedCommand));
-            cmd.timing_data.ptr = chunk;
-            if(!command_queue.send_wait(cmd)) { panic(7); }
-        } else {
-            if(!command_queue.send_wait(cmd)) { panic(8); }
-        }
-
-        head += cmd.full_size();
-    }
-    
-    memmove(staging_buffer, head, end - head);
-    staging_index = end - head;
-}
-
 
 float read_temp() {
     Wire.beginTransmission(0x44);
@@ -246,35 +58,68 @@ float read_temp() {
     return temp;
 }
 
+void queue_command(Token primary, Token* params_begin, Token* params_end) {
+    Command cmd{};
+    if(primary.letter == 'M') {
+        cmd.type = 'M';
+        cmd.mcode = MCode_from_number(primary.number);
+    }
+    if(primary.letter == 'G') {
+        cmd.type = 'G';
+        cmd.gcode.code = GCode_from_number(primary.number);
+        cmd.gcode.coord = GCode_coordinate_lex(params_begin, params_end);
+    }
+    queued_commands.send(cmd);
+}
+
 void task_loop(void * args) {
     delay(10);
     Serial.print("Task loop started on core ");
     Serial.println(xPortGetCoreID());
-    // USB.webUSB(true);
-    while(true) {
-        float t0 = read_temp();
+    GCodeParser parser{};
+    parser.set_callback(queue_command);
 
-        Serial.print("Temp: ");
-        Serial.println(t0);
-        delay(500);
-        size_t m = millis();
-        digitalWrite(Pins::LED_0, (m / 500) % 2);
+    while(true) {
+        while(Serial.available()) {
+            int v = Serial.read();
+            parser.next_char(v);
+        }
+        // float t0 = read_temp();
+        // Serial.print("Temp: ");
+        // Serial.println(t0);
+        delay(1);
+        // size_t m = millis();
+        // digitalWrite(Pins::LED_0, (m / 500) % 2);
     }
 }
 
 void step_loop(void * args) {
     Serial.print("Step loop started on core ");
     Serial.println(xPortGetCoreID());
+
+    PathExecutor path_executor(controllers);
     while(true) {
         Command cmd{};
-        if(command_queue.receive_wait(&cmd)){
-            execute_cmd(cmd);
+        if(queued_commands.receive_wait(&cmd)) {
+            if(cmd.type == 'G') {
+                path_executor.execute(cmd.gcode);
+            }
+            if(cmd.type == 'M') {
+                MCode code = cmd.mcode;
+                if(code == MCode::M31Enable) {
+                    hardware_enable_all();
+                }
+                if(code == MCode::M32Disable) {
+                    hardware_disable_all();
+                }
+            }
         }
     }
 }
 
 void setup(){
     Serial.begin(460800);
+    USB.webUSB(true);
     Wire.begin(Pins::SDA_1, Pins::SCL);
     pinMode(Pins::LED_0, OUTPUT);
     pinMode(Pins::LED_1, OUTPUT);
@@ -292,14 +137,7 @@ void setup(){
     pinMode(Pins::ENN_3, OUTPUT);
     pinMode(Pins::STEP_3, OUTPUT);
     pinMode(Pins::DIR_3, OUTPUT);
-    pinMode(Pins::TP22, OUTPUT);
-    pinMode(Pins::TP23, OUTPUT);
-    pinMode(Pins::TP24, OUTPUT);
-    pinMode(Pins::TP25, OUTPUT);
-    pinMode(Pins::TP26, OUTPUT);
-    pinMode(Pins::TP27, OUTPUT);
-    pinMode(Pins::TP28, OUTPUT);
-    pinMode(Pins::TP29, OUTPUT);
+    pinMode(Pins::FanControl, OUTPUT);
     digitalWrite(Pins::ENN_0, LOW);
     digitalWrite(Pins::STEP_0, LOW);
     digitalWrite(Pins::DIR_0, LOW);
@@ -312,18 +150,13 @@ void setup(){
     digitalWrite(Pins::ENN_3, LOW);
     digitalWrite(Pins::STEP_3, LOW);
     digitalWrite(Pins::DIR_3, LOW);
-    hardware_disable_all();
+    hardware_enable_all();
     
-    for(TimedCommand* buffer : timing_buffers) {
-        free_timing_buffers.send(buffer);
-    }
-
     Serial0.begin(115200);
     for(int i = 0; i < 4; i++){
         if(!controllers[i].init()) {
             panic(i);
         }
-        controllers[i].enable(true);
     }
 
     hardware_disable_all();
@@ -331,20 +164,6 @@ void setup(){
     digitalWrite(Pins::LED_1, HIGH);
     digitalWrite(Pins::LED_2, HIGH);
     digitalWrite(Pins::LED_3, HIGH);
-
-    set_data_callback(on_command_message);
-    // setup_wifi("SJSK2", "srijanshukla");
-    setup_wifi("foobar3", "25mjrn15");
-    // delay(1000);
-
-    digitalWrite(Pins::LED_0, LOW);
-    digitalWrite(Pins::LED_1, LOW);
-    digitalWrite(Pins::LED_2, LOW);
-    digitalWrite(Pins::LED_3, LOW);
-    for(int i = 0; i < 4; i++) {
-        hardware_enable_all();
-        controllers[i].enable(true);
-    }
     
     xTaskCreatePinnedToCore(task_loop, "Task Loop", 8192, nullptr, 1, nullptr, 0);
     xTaskCreatePinnedToCore(step_loop, "Step Loop", 8192, nullptr, 1, nullptr, 1);

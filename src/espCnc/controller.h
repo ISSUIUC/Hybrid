@@ -5,7 +5,7 @@
 
 class MotorController {
 public:
-    MotorController(uint8_t step_pin, uint8_t dir_pin, TMC2209::SerialAddress addr);
+    MotorController(uint8_t step_pin, uint8_t dir_pin, TMC2209::SerialAddress addr, float mm_per_rev, float mm_per_sec);
     bool init();
     void enable(bool en);
     void set_microsteps(int steps);
@@ -22,10 +22,28 @@ public:
         digitalWrite(dir_pin, dir ? LOW : HIGH);
         current_dir = dir;
     }
+    int get_microsteps() {
+        return microsteps;
+    }
+    int get_step_per_rev() {
+        return 200;
+    }
+    int get_mm_per_rev() {
+        return mm_per_rev;
+    }
+    int microsteps_for_pos(float pos) {
+        return pos * get_step_per_rev() * get_microsteps() / get_mm_per_rev();
+    }
+    int microsteps_per_sec() {
+        return mm_per_sec * get_step_per_rev() * get_microsteps() / get_mm_per_rev();
+    }
 private:
     TMC2209 tmc;
     TMC2209::SerialAddress addr;
     uint8_t step_pin;
     uint8_t dir_pin;
+    int microsteps = 256;
+    float mm_per_rev;
+    float mm_per_sec;
     bool current_dir = false;
 };

@@ -1,7 +1,7 @@
 #include "controller.h"
 
-MotorController::MotorController(uint8_t step_pin, uint8_t dir_pin, TMC2209::SerialAddress addr):
-step_pin(step_pin), dir_pin(dir_pin), addr(addr){}
+MotorController::MotorController(uint8_t step_pin, uint8_t dir_pin, TMC2209::SerialAddress addr, float mm_per_rev, float mm_per_sec):
+step_pin(step_pin), dir_pin(dir_pin), addr(addr), mm_per_rev(mm_per_rev), mm_per_sec(mm_per_sec){}
 bool MotorController::init(){
     pinMode(step_pin, OUTPUT);
     pinMode(dir_pin, OUTPUT);
@@ -17,7 +17,7 @@ bool MotorController::init(){
     // tmc.disableAutomaticCurrentScaling();
     // tmc.disableAutomaticGradientAdaptation();
     tmc.setAllCurrentValues(100,100,100);
-    tmc.setMicrostepsPerStep(8);
+    tmc.setMicrostepsPerStep(microsteps);
     tmc.enableStealthChop();
     tmc.enableCoolStep();
     // tmc.disableStealthChop();
