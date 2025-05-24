@@ -11,7 +11,12 @@ void GCodeParser::next_char(char c) {
         } else if(c >= 'A' && c <= 'Z') {
             current_letter = c;
             mode = ParseMode::ReadNumber;
+        } else if(c >= 'a' && c <= 'z') {
+            current_letter = c - 'a' + 'A';
+            mode = ParseMode::ReadNumber;
         } else {
+            Serial.print("Unexpected Token "); Serial.println(c);
+            Serial.print("At parse location "); Serial.println(char_count);
             panic(15);
         }
     } else if(mode == ParseMode::ReadNumber) {
@@ -26,6 +31,7 @@ void GCodeParser::next_char(char c) {
             mode = ParseMode::FindToken;
         }
     }
+    char_count++;
 }
 
 void GCodeParser::process_cmd() {

@@ -35,4 +35,5 @@ private:
     Token token_buff[32];
     int token_idx = 0;
     HandleCommand handler;
+    int char_count = 0;
 };

@@ -44,6 +44,8 @@ GCodeCoordinate GCode_coordinate_lex(Token* beg, Token* end) {
                 coord.mask |= (1 << 4);
                 break;
             default:
+                Serial.print("Bad GCode letter ");
+                Serial.print(t->letter);
                 panic(14);
         }
     }

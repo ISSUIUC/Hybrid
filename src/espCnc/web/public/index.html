@@ -7,11 +7,12 @@
     <style>
         body {
             display: grid;
-            grid-template-rows: 1fr;
-            grid-template-columns: 1fr 1fr 3fr;
+            grid-template-rows: 8fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr;
             width: 100vw;
             height: 100vh;
-            padding: 10px;
+            margin: 0;
+            padding: 0;
             overflow: hidden;
         }
         canvas {
@@ -22,26 +23,10 @@
     </style>
 </head>
 <body>
-    <div id="cnc0">
-        <textarea id="code_input0" style="height: 50vh;" value="test"></textarea>
-        <input type="button" value="go" id="go_button0">
-        <input type="button" value="ESTOP" id="estop0">
-        <input type="button" value="RERUN" id="redo0">
-        <div id="status0">
-            WAITING...
-        </div>
-    </div>
-    <div id="cnc1">
-        <textarea id="code_input1" style="height: 50vh;"></textarea>
-        <input type="button" value="go" id="go_button1">
-        <input type="button" value="ESTOP" id="estop1">
-        <div id="status1">
-            WAITING...
-        </div>
-    </div>
-    <div id="preview">
-        <canvas id="canvas"></canvas>
-    </div>
+    <textarea id="code" style="grid-column-start: 1; grid-column-end: 4;"></textarea>
+    <button id="connect">Connect</button>
+    <button id="send">Send</button>
+    <div id="status"></div>
     <script src="bundle.js"></script>
 </body>
 </html>

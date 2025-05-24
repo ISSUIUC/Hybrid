@@ -43,13 +43,21 @@ void PathExecutor::execute(GCodeCommand cmd) {
         float center_Y = Y + cmd.coord.J;
         float radius = sqrtf(cmd.coord.I * cmd.coord.I + cmd.coord.J * cmd.coord.J);
         float theta0 = atan2f(-cmd.coord.J, -cmd.coord.I);
-        float end_x, end_y;
+        float end_x = X;
+        float end_y = Y;
+        float end_z = Z;
         if(mode == CoordinateMode::Absolute) {
             end_x = cmd.coord.X;
             end_y = cmd.coord.Y;
+            if(cmd.coord.mask & 0b00100) {
+                end_z = cmd.coord.Z;
+            }
         } else {
             end_x = X + cmd.coord.X;
             end_y = Y + cmd.coord.Y;
+            if(cmd.coord.mask & 0b00100) {
+                end_z = Z + cmd.coord.Z;
+            }
         }
         float theta1 = atan2f(end_y - center_Y, end_x - center_X);
         if(cmd.code == GCode::G3CircularInterpolationCounterClockwise){
@@ -57,19 +65,24 @@ void PathExecutor::execute(GCodeCommand cmd) {
         } else {
             if(theta1 > theta0) theta1 -= 2 * PI; //enforce clockwise
         }
-        constexpr int steps = 100;
+        constexpr int steps = 128;
         float theta_step = (theta1 - theta0) / steps;
+        float z_step = (end_z - Z) / steps;
         for(int i = 0; i < steps; i++) {
             float t_next = theta0 + (i+1) * theta_step;
             float next_X = center_X + radius * cosf(t_next);
             float next_Y = center_Y + radius * sinf(t_next);
+            float next_Z = Z + z_step;
             int target_x = motors[0].microsteps_for_pos(next_X);
             int target_y = motors[1].microsteps_for_pos(next_Y);
+            int target_z = motors[2].microsteps_for_pos(next_Z);
             int here_x = motors[0].microsteps_for_pos(X);
             int here_y = motors[1].microsteps_for_pos(Y);
-            linear_step(target_x - here_x, target_y - here_y, 0, x_rate, y_rate, z_rate);
+            int here_z = motors[2].microsteps_for_pos(Z);
+            linear_step(target_x - here_x, target_y - here_y, target_z - here_z, x_rate, y_rate, z_rate);
             X = next_X;
             Y = next_Y;
+            Z = next_Z;
         }
     }
     if(cmd.code == GCode::G90AbsoluteMode) {

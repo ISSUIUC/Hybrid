@@ -1,76 +1,54 @@
-import { DelayCommand, ExecutionSession, StartCommand, StopCommand } from "./session";
-import { UI } from "./ui";
+const CONNECT = document.getElementById("connect");
+const SEND = document.getElementById("send");
+const CODE = document.getElementById("code") as HTMLTextAreaElement;
+const STATUS = document.getElementById("status");
 
-const ui = new UI("ws://192.168.234.193/ws", "go_button0", "estop0", "redo0", "code_input0", "status0");
-// const ui = new UI("ws://192.168.234.193/ws", "go_button0", "estop0", "code_input0", "status0");
+let bytes_in_flight = 0;
+let send_queue = "";
+let bytes_sent = 0;
 
-// const live_ports: SerialPort[] = [];
-// let print_buff = "";
+async function read_task(reader: ReadableStreamDefaultReader<Uint8Array>) {
+    const decoder = new TextDecoder();
+    while(true) {
+        const {value, done} = await reader.read();
+        if(done) {
+            console.log("Reader Done");
+            return;
+        }
 
-// const SerialOut = new WritableStream<Uint8Array>({
-//     start(controller) { console.log(controller)},
-//     write(chunk, controller) { 
-//         let text = new TextDecoder().decode(chunk);
-//         print_buff += text;
-//         if(print_buff.endsWith("\n")) {
-//             console.log(print_buff);
-//             print_buff = "";
-//         }
-//     },
-//     abort(reason) {console.log(reason)},
-// })
+        const str_value = decoder.decode(value);
+        console.log(str_value);
+        for(const c of str_value) {
+            if(c == '%') bytes_in_flight -= 1;
+        }
+    }
+}
 
-// navigator.serial.getPorts().then((ports) => {
-//     console.log(ports);
-//     ports.forEach(register_port);
-// });
+async function write_task(writer: WritableStreamDefaultWriter<Uint8Array>) {
+  const encoder = new TextEncoder();
+    setInterval(async ()=>{
+        STATUS.innerHTML = `${send_queue.length} ${bytes_sent} ${bytes_in_flight}`;
+        if(bytes_in_flight < 64 && send_queue.length != 0) {
+            const next_chunk = send_queue.slice(0,128);
+            send_queue = send_queue.slice(128)
+            const val = encoder.encode(next_chunk);
+            console.log(next_chunk);
+            writer.write(val);
+            bytes_in_flight += val.byteLength;
+            bytes_sent += val.byteLength;
+        }
+    });
+}
 
-// async function delay(millis: number) {
-//     return new Promise((res,rej)=>{
-//         setTimeout(res,millis)
-//     })
-// }
+CONNECT.addEventListener("click", async () => {
+  const port = await navigator.serial.requestPort()
+  await port.open({baudRate: 460800});
+  const writer = await port.writable.getWriter();
+  const reader = await port.readable.getReader();
+  read_task(reader);
+  write_task(writer);
+});
 
-// async function register_port(port: SerialPort){
-//     await port.open({baudRate:460800,bufferSize:1<<22});
-//     port.readable.pipeTo(SerialOut);
-//     await delay(200);
-//     live_ports.push(port);
-// }
-
-// async function write_port(port: SerialPort, msg: Uint8Array) {
-//     let writer = port.writable.getWriter();
-//     await writer.ready;
-//     console.log(writer.desiredSize);
-//     console.time("send");
-//     for(let i = 0; i < 100; i++){
-//         writer.desiredSize
-//         await writer.write(new Uint8Array(20));
-//     }
-//     console.timeEnd("send");
-
-//     writer.releaseLock();
-// }
-
-
-// document.getElementById("run").addEventListener("click", ()=>{
-//     // let micros = session.compile_commands(new Array(100).fill(new StopCommand()),1);
-//     // let binary = session.serialize_micros(micros);
-//     let binary = new Uint8Array(500);
-//     // console.log(binary)
-//     live_ports.forEach(async port=>{
-//         await write_port(port, binary);
-//     })
-// });
-
-// document.getElementById("connect").addEventListener("click", () => {
-//     const usbVendorId = 0x303A;
-//     navigator.serial
-//         .requestPort({ filters: [{ usbVendorId }] })
-//         .then((port) => {
-//             register_port(port)
-//         })
-//         .catch((e) => {
-//             console.log(e);
-//         });
-// });
+SEND.addEventListener("click", () => {
+    send_queue += CODE.value;
+});

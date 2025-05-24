@@ -69,7 +69,7 @@ void queue_command(Token primary, Token* params_begin, Token* params_end) {
         cmd.gcode.code = GCode_from_number(primary.number);
         cmd.gcode.coord = GCode_coordinate_lex(params_begin, params_end);
     }
-    queued_commands.send(cmd);
+    queued_commands.send_wait(cmd);
 }
 
 void task_loop(void * args) {
@@ -82,13 +82,17 @@ void task_loop(void * args) {
     while(true) {
         while(Serial.available()) {
             int v = Serial.read();
+            Serial.print('%');
             parser.next_char(v);
         }
-        // float t0 = read_temp();
-        // Serial.print("Temp: ");
-        // Serial.println(t0);
+        uint32_t time = millis();
+        if(time % 500 == 0) {
+            float t0 = read_temp();
+            Serial.print("Temp: ");
+            Serial.println(t0);
+        }
+        
         delay(1);
-        // size_t m = millis();
         // digitalWrite(Pins::LED_0, (m / 500) % 2);
     }
 }
