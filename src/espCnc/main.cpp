@@ -374,10 +374,12 @@
 //     delay(100000);
 // }
 
-#include<Arduino.h>
+#include <Arduino.h>
 //#include<TMCStepper.h>
-#include<TMCDriver.h>
-#include<SPI.h>
+#include <TMCDriver.h>
+#include <esp_now.h>
+#include <WiFi.h>
+#include <SPI.h>
 #include <cmath>
 #include <array>
 
@@ -399,6 +401,9 @@
 #define LED1 8
 #define BOOT 0
 
+// REPLACE WITH MIDAS MAC Address
+uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+
 TMC2660 driver(CS_0, SG_0);
 
 bool sdoff = false;
@@ -415,6 +420,29 @@ struct {
     std::array<int,2> step_per_rev{int(4.125*32*200),int(4.667*32*200)};
 } motor_config;
 
+typedef struct gps_data { 
+    float my_lat;
+    float my_lon;
+    float my_alt;
+    float rocket_lat;
+    float rocket_lon; 
+    float rocket_alt;
+} gps_data;
+
+gps_data gps_message;
+
+esp_now_peer_info_t peerInfo;
+
+void on_data_recv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+    if(len != sizeof(gps_data)) {
+        Serial.println("Received data of incorrect length");
+        return;
+    }
+    memcpy(&gps_message, incomingData, sizeof(gps_data));
+    Serial.printf("Received GPS data: my_lat: %.6f, my_lon: %.6f, my_alt: %.2f, rocket_lat: %.6f, rocket_lon: %.6f, rocket_alt: %.2f\n",
+                  gps_message.my_lat, gps_message.my_lon, gps_message.my_alt,
+                  gps_message.rocket_lat, gps_message.rocket_lon, gps_message.rocket_alt);
+}
 
 void step(int channel, bool dir) {
     if(channel == 0) {
@@ -484,7 +512,7 @@ void move_to_position() {
 
 //Below is saved for the communication between midas and the motor board.
 
-    //WGS84 constants
+//WGS84 constants
 constexpr double a = 6378137.0;           // Equatorial radius
 constexpr double f = 1.0 / 298.257223563; // Flattening
 constexpr double b = a * (1 - f);         // Polar radius
@@ -539,8 +567,8 @@ void update_position(double goal_lat, double goal_lon, double goal_alt,
     calculate_pitch_yaw(east, north, up, pitch, yaw);
 
     // Store pitch and yaw as target motor positions (scaled or converted if needed)
-    int to_go_to_pitch = static_cast<int>(pitch * 180.0 / M_PI);//Pitch in Degrees
-    int to_go_to_yaw = static_cast<int>(yaw * 180.0 / M_PI);//Yaw in Degrees
+    int to_go_to_pitch = static_cast<int>(pitch * 180.0 / M_PI); //Pitch in Degrees
+    int to_go_to_yaw = static_cast<int>(yaw * 180.0 / M_PI); //Yaw in Degrees
 
     int numstepspitch = static_cast<uint32_t>(std::floor(to_go_to_pitch/.0136363636363636));
     int numstepyaw = static_cast<uint32_t>(std::floor(to_go_to_yaw/.01205357142));
@@ -552,7 +580,8 @@ void update_position(double goal_lat, double goal_lon, double goal_alt,
 
 void setup() {
     Serial.begin(9600);
-    SPI.begin(SPI_SCK,SPI_MISO,SPI_MOSI);
+    // SPI.begin(SPI_SCK,SPI_MISO,SPI_MOSI);
+    SPI.begin();
     pinMode(LED0, OUTPUT);
     pinMode(LED1, OUTPUT);
     pinMode(EN_0, OUTPUT);
@@ -605,6 +634,14 @@ void setup() {
 
     motor_config.target_position[0] = 0;
     motor_config.target_position[1] = 0;
+
+    // setup for ESPNow
+    WiFi.mode(WIFI_STA);
+    if (esp_now_init() != ESP_OK) {
+        Serial.println("Error initializing ESP-NOW");
+        return;
+    }
+    esp_now_register_recv_cb(on_data_recv);
 }
 
 
@@ -625,6 +662,13 @@ int i = 0;
 std::string input_buff = "";
 uint64_t last_time = 0;
 void loop() {
+    // updating the GPS position
+    if (millis() - last_time > 1000) {
+        last_time = millis();
+        update_position(gps_message.rocket_lat, gps_message.rocket_lon, gps_message.rocket_alt,
+                        gps_message.my_lat, gps_message.my_lon, gps_message.my_alt);
+        Serial.printf("Target Position: %d %d\n", motor_config.target_position[0], motor_config.target_position[1]);
+    }
     if(Serial.available() && i < 2) {
         char v = Serial.read();
         Serial.println(v);
