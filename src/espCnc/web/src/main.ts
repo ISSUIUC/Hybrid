@@ -6,6 +6,7 @@ const STATUS = document.getElementById("status");
 let bytes_in_flight = 0;
 let send_queue = "";
 let bytes_sent = 0;
+let print_buff = "";
 
 async function read_task(reader: ReadableStreamDefaultReader<Uint8Array>) {
     const decoder = new TextDecoder();
@@ -17,9 +18,15 @@ async function read_task(reader: ReadableStreamDefaultReader<Uint8Array>) {
         }
 
         const str_value = decoder.decode(value);
-        console.log(str_value);
-        for(const c of str_value) {
-            if(c == '%') bytes_in_flight -= 1;
+        for(let c of str_value) {
+            if(c == '%') {
+                bytes_in_flight--;
+            } else if(c == '\n') {
+                console.log(print_buff);
+                print_buff = "";
+            } else {
+                print_buff += c;
+            }
         }
     }
 }
@@ -32,7 +39,6 @@ async function write_task(writer: WritableStreamDefaultWriter<Uint8Array>) {
             const next_chunk = send_queue.slice(0,128);
             send_queue = send_queue.slice(128)
             const val = encoder.encode(next_chunk);
-            console.log(next_chunk);
             writer.write(val);
             bytes_in_flight += val.byteLength;
             bytes_sent += val.byteLength;

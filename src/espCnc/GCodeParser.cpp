@@ -36,7 +36,7 @@ void GCodeParser::next_char(char c) {
 
 void GCodeParser::process_cmd() {
     number_buff[number_idx] = 0;
-    float num = std::atof(number_buff);
+    float num = std::stod(number_buff);
     char letter = current_letter;
     number_idx = 0;
     current_letter = 0;

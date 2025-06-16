@@ -3,7 +3,7 @@
 #include<Arduino.h>
 #include"esp_pins.h"
 
-inline void panic(int code) {
+[[noreturn]] inline void panic(int code) {
     Serial.print("Panic ");
     Serial.println(code);
     static constexpr uint8_t leds[] = {

@@ -43,6 +43,20 @@ GCodeCoordinate GCode_coordinate_lex(Token* beg, Token* end) {
                 coord.J = t->number;
                 coord.mask |= (1 << 4);
                 break;
+            case 'K':
+                coord.K = t->number;
+                coord.mask |= (1 << 5);
+                break;
+            case 'N':
+                coord.N = t->number;
+                //ignore line number
+            case 'T':
+                //ignore M config number
+            case 'F':
+                //ignore feed rate
+            case 'H':
+                //ignore tool length comp
+                break;
             default:
                 Serial.print("Bad GCode letter ");
                 Serial.print(t->letter);

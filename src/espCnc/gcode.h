@@ -67,7 +67,47 @@ struct GCodeCoordinate {
     float Z{};
     float I{};
     float J{};
+    float K{};
+    float N{};
     uint8_t mask{};
+
+    void print() {
+        Serial.print("Coordinate: ");
+        Serial.print(X); Serial.print(' ');
+        Serial.print(Y); Serial.print(' ');
+        Serial.print(Z); Serial.print(' ');
+        Serial.print(I); Serial.print(' ');
+        Serial.print(J); Serial.print(' ');
+        Serial.print(K); Serial.print(' ');
+        Serial.print(N); Serial.print(' ');
+        Serial.println(mask);
+    }
+
+    float get_coord(int idx) {
+        switch(idx) {
+            case 0: return X;
+            case 1: return Y;
+            case 2: return Z;
+            default: panic(11);
+        }
+    }
+
+    bool has_coord(int idx) {
+        return mask & (1 << idx);
+    }
+
+    bool has_offset(int idx) {
+        return mask & (1 << (idx + 3));
+    }
+
+    float get_offset(int idx) {
+        switch(idx) {
+            case 0: return I;
+            case 1: return J;
+            case 2: return K;
+            default: panic(11);
+        }
+    }
 };
 
 struct GCodeCommand {

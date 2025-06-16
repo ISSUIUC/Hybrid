@@ -10,13 +10,13 @@
 #include "GCodeParser.h"
 #include "PathExecute.h"
 
-Queue<Command, 32> queued_commands;
+Queue<Command, 256> queued_commands;
 
 MotorController controllers[4] {
-    MotorController(Pins::STEP_0, Pins::DIR_0, TMC2209::SERIAL_ADDRESS_0, 40, 20), //XAxis
-    MotorController(Pins::STEP_3, Pins::DIR_3, TMC2209::SERIAL_ADDRESS_3, 8,  20), //YAxis
-    MotorController(Pins::STEP_1, Pins::DIR_1, TMC2209::SERIAL_ADDRESS_2, 8,  5), //ZAxis
-    MotorController(Pins::STEP_2, Pins::DIR_2, TMC2209::SERIAL_ADDRESS_1, 8,  20), //AAxis
+    MotorController(Pins::STEP_0, Pins::DIR_0, TMC2209::SERIAL_ADDRESS_0, 8, 10, 30, 400), //XAxis
+    MotorController(Pins::STEP_3, Pins::DIR_3, TMC2209::SERIAL_ADDRESS_3, 8, 10, 30, 400), //YAxis
+    MotorController(Pins::STEP_1, Pins::DIR_1, TMC2209::SERIAL_ADDRESS_2, 8,  5,  30, 400), //ZAxis
+    MotorController(Pins::STEP_2, Pins::DIR_2, TMC2209::SERIAL_ADDRESS_1, 8,  20, 20, 20), //AAxis
 };
 
 void hardware_enable_all() {
@@ -78,6 +78,7 @@ void task_loop(void * args) {
     Serial.println(xPortGetCoreID());
     GCodeParser parser{};
     parser.set_callback(queue_command);
+    uint32_t last_temp_time = 0;
 
     while(true) {
         while(Serial.available()) {
@@ -86,12 +87,13 @@ void task_loop(void * args) {
             parser.next_char(v);
         }
         uint32_t time = millis();
-        if(time % 500 == 0) {
+        if(time - last_temp_time > 500) {
+            last_temp_time = time;
             float t0 = read_temp();
             Serial.print("Temp: ");
             Serial.println(t0);
         }
-        
+
         delay(1);
         // digitalWrite(Pins::LED_0, (m / 500) % 2);
     }
@@ -107,7 +109,7 @@ void step_loop(void * args) {
         if(queued_commands.receive_wait(&cmd)) {
             if(cmd.type == 'G') {
                 path_executor.execute(cmd.gcode);
-            }
+            }   
             if(cmd.type == 'M') {
                 MCode code = cmd.mcode;
                 if(code == MCode::M31Enable) {
@@ -162,6 +164,9 @@ void setup(){
             panic(i);
         }
     }
+    controllers[0].set_currents(100, 10, 50);
+    controllers[1].set_currents(100, 10, 50);
+    controllers[2].set_currents(100, 10, 50);
 
     hardware_disable_all();
     digitalWrite(Pins::LED_0, HIGH);

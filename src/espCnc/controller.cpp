@@ -1,7 +1,9 @@
 #include "controller.h"
 
-MotorController::MotorController(uint8_t step_pin, uint8_t dir_pin, TMC2209::SerialAddress addr, float mm_per_rev, float mm_per_sec):
-step_pin(step_pin), dir_pin(dir_pin), addr(addr), mm_per_rev(mm_per_rev), mm_per_sec(mm_per_sec){}
+MotorController::MotorController(uint8_t step_pin, uint8_t dir_pin, TMC2209::SerialAddress addr, 
+    float mm_per_rev, float mm_per_sec, float mm_per_sec_fast, float mm_per_sec2_fast):
+step_pin(step_pin), dir_pin(dir_pin), addr(addr), mm_per_rev(mm_per_rev), 
+mm_per_sec(mm_per_sec), mm_per_sec_fast(mm_per_sec_fast), mm_per_sec2_fast(mm_per_sec2_fast) {}
 bool MotorController::init(){
     pinMode(step_pin, OUTPUT);
     pinMode(dir_pin, OUTPUT);
@@ -16,13 +18,17 @@ bool MotorController::init(){
     tmc.enableAutomaticGradientAdaptation();
     // tmc.disableAutomaticCurrentScaling();
     // tmc.disableAutomaticGradientAdaptation();
-    tmc.setAllCurrentValues(100,100,100);
+    tmc.setAllCurrentValues(100,80,100);
     tmc.setMicrostepsPerStep(microsteps);
     tmc.enableStealthChop();
     tmc.enableCoolStep();
     // tmc.disableStealthChop();
     // tmc.disableCoolStep();
     return true;
+}
+
+void MotorController::set_currents(int run, int hold, int hold_percent) {
+    tmc.setAllCurrentValues(run, hold, hold_percent);
 }
 
 void MotorController::enable(bool en) {

@@ -7,6 +7,7 @@
   var bytes_in_flight = 0;
   var send_queue = "";
   var bytes_sent = 0;
+  var print_buff = "";
   async function read_task(reader) {
     const decoder = new TextDecoder();
     while (true) {
@@ -16,9 +17,15 @@
         return;
       }
       const str_value = decoder.decode(value);
-      console.log(str_value);
-      for (const c of str_value) {
-        if (c == "%") bytes_in_flight -= 1;
+      for (let c of str_value) {
+        if (c == "%") {
+          bytes_in_flight--;
+        } else if (c == "\n") {
+          console.log(print_buff);
+          print_buff = "";
+        } else {
+          print_buff += c;
+        }
       }
     }
   }
@@ -30,7 +37,6 @@
         const next_chunk = send_queue.slice(0, 128);
         send_queue = send_queue.slice(128);
         const val = encoder.encode(next_chunk);
-        console.log(next_chunk);
         writer.write(val);
         bytes_in_flight += val.byteLength;
         bytes_sent += val.byteLength;
