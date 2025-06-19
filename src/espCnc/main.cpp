@@ -30,13 +30,15 @@ struct GpsData {
     float my_lon;
     float my_alt;
     float my_pitch;
+    float my_yaw;
     float rocket_lat;
     float rocket_lon; 
     float rocket_alt;
+    int control_mode;
 };
 
 void update_position(double goal_lat, double goal_lon, double goal_alt,
-                     double curr_lat, double curr_lon, double curr_alt, double curr_pitch);
+                     double curr_lat, double curr_lon, double curr_alt, double curr_pitch, double curr_yaw, int mode);
 
 GpsData gps_knowledge;
 
@@ -65,7 +67,8 @@ void on_data_recv(const uint8_t * mac, const uint8_t *incomingData, int len) {
     // memcpy(&GpsData, incomingData, sizeof(GpsData));
     memcpy(&gps_knowledge, incomingData, len);
     update_position(gps_knowledge.rocket_lat, gps_knowledge.rocket_lon, gps_knowledge.rocket_alt,
-                    gps_knowledge.my_lat, gps_knowledge.my_lon, gps_knowledge.my_alt, gps_knowledge.my_pitch);
+                    gps_knowledge.my_lat, gps_knowledge.my_lon, gps_knowledge.my_alt, 
+                    gps_knowledge.my_pitch, gps_knowledge.my_yaw, gps_knowledge.control_mode);
 }
 
 void step(int channel, bool dir) {
@@ -179,7 +182,7 @@ void calculate_pitch_yaw(double east, double north, double up, double& pitch, do
 }
 
 void update_position(double goal_lat, double goal_lon, double goal_alt,
-                     double curr_lat, double curr_lon, double curr_alt, double curr_pitch) {
+                     double curr_lat, double curr_lon, double curr_alt, double curr_pitch, double curr_yaw, int mode) {
     double x1, y1, z1, x2, y2, z2;
     gps_to_ecef(curr_lat, curr_lon, curr_alt, x1, y1, z1);
     gps_to_ecef(goal_lat, goal_lon, goal_alt, x2, y2, z2);
@@ -190,8 +193,14 @@ void update_position(double goal_lat, double goal_lon, double goal_alt,
     double pitch, yaw;
     calculate_pitch_yaw(east, north, up, pitch, yaw);
 
+    if(mode == 1){
+        pitch = curr_pitch;
+        yaw = curr_yaw;
+    }
+
     int steps_pitch = motor_config.step_per_rev[0] * motor_config.microsteps * pitch / (2 * M_PI);
     int steps_yaw  = motor_config.step_per_rev[1] * motor_config.microsteps * yaw / (2 * M_PI);
+
     if(pitch < 0) steps_pitch = 0;
     if(pitch > (M_PI / 2)) steps_pitch = motor_config.step_per_rev[0] * motor_config.microsteps * 0.25;
 
