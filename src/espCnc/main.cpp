@@ -64,6 +64,7 @@ void on_data_recv(const uint8_t * mac, const uint8_t *incomingData, int len) {
         Serial.println("Received data of incorrect length");
         return;
     }
+    
     // memcpy(&GpsData, incomingData, sizeof(GpsData));
     memcpy(&gps_knowledge, incomingData, len);
     update_position(gps_knowledge.rocket_lat, gps_knowledge.rocket_lon, gps_knowledge.rocket_alt,
@@ -139,7 +140,7 @@ void move_to_position() {
 
 //Below is saved for the communication between midas and the motor board.
 
-    //WGS84 constants
+//WGS84 constants
 constexpr double a = 6378137.0;           // Equatorial radius
 constexpr double f = 1.0 / 298.257223563; // Flattening
 constexpr double b = a * (1 - f);         // Polar radius
@@ -178,7 +179,7 @@ void ecef_to_enu(double x, double y, double z,
 // Calculates pitch and yaw from ENU
 void calculate_pitch_yaw(double east, double north, double up, double& pitch, double& yaw) {
     pitch = std::atan2(up, std::sqrt(east * east + north * north));
-    yaw = std::atan2(east, north);
+    yaw = -std::atan2(east, north); // TODO: Check math because the yaw is flipped
 }
 
 void update_position(double goal_lat, double goal_lon, double goal_alt,
@@ -193,7 +194,7 @@ void update_position(double goal_lat, double goal_lon, double goal_alt,
     double pitch, yaw;
     calculate_pitch_yaw(east, north, up, pitch, yaw);
 
-    if(mode == 1){
+    if (mode == 0) {
         pitch = curr_pitch;
         yaw = curr_yaw;
     }
@@ -270,6 +271,7 @@ void setup() {
         Serial.println("Error initializing ESP-NOW");
         return;
     }
+    Serial.println("ESP-NOW initialized successfully");
     esp_now_register_recv_cb(on_data_recv);
 }
 
