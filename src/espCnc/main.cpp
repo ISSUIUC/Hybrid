@@ -45,6 +45,7 @@ GpsData gps_knowledge;
 TMC2660 driver(CS_0, SG_0);
 
 bool sdoff = false;
+uint8_t log_counter = 0;
 
 struct {
     std::array<int,2> real_position{};
@@ -95,7 +96,7 @@ void move_to_position() {
     motor_config.last_update_time = now;
 
     for(int motor = 0; motor < 2; motor++) {
-        //integration phase
+        // integration phase
         float& pos = motor_config.ideal_position[motor];
         float target = motor_config.target_position[motor];
         float& speed = motor_config.speed[motor];
@@ -103,27 +104,31 @@ void move_to_position() {
         float decel = motor_config.max_decel[motor];
         pos += speed * dt;
 
-        //step phase
+        // step phase
         if(pos > motor_config.real_position[motor] + 1) {
             step(motor, true);
             motor_config.real_position[motor] += 1;
-            // Serial.print(pos);
-            // Serial.print(' ');
-            // Serial.print(speed);
-            // Serial.print(' ');
-            // Serial.println(dt * 1000000);
+            if (log_counter % 5 == 0) {
+                Serial.print(pos);
+                Serial.print(' ');
+                Serial.print(speed);
+                Serial.print(' ');
+                Serial.println(dt * 1000000);
+            }
         }
         if(pos < motor_config.real_position[motor] - 1) {
             step(motor, false);
             motor_config.real_position[motor] -= 1;
-            // Serial.print(pos);
-            // Serial.print(' ');
-            // Serial.print(speed);
-            // Serial.print(' ');
-            // Serial.println(dt);
+            if (log_counter % 5 == 0) {
+                Serial.print(pos);
+                Serial.print(' ');
+                Serial.print(speed);
+                Serial.print(' ');
+                Serial.println(dt * 1000000);
+            }
         }
 
-        //control phase
+        // control phase
         float dir = speed > 0 ? 1 : -1;
         float decel_pos = pos + speed * speed / decel / 2.0 * dir;
         if((decel_pos - target) * dir >= 0) {
@@ -131,6 +136,14 @@ void move_to_position() {
         } else if(abs(speed) < motor_config.max_speed[motor]) {
             speed += accel * dt * dir;
         }
+    }
+    log_counter++;
+    if(log_counter % 10 == 0) {
+        Serial.print("Real Position: ");
+        Serial.print(motor_config.real_position[0]);
+        Serial.print(' ');
+        Serial.println(motor_config.real_position[1]);
+        log_counter = 0;
     }
 }
 
