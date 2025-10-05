@@ -67,7 +67,11 @@ void on_data_recv(const uint8_t * mac, const uint8_t *incomingData, int len) {
     }
     
     // memcpy(&GpsData, incomingData, sizeof(GpsData));
+
     memcpy(&gps_knowledge, incomingData, len);
+    if(gps_knowledge.rocket_lat == 0 || gps_knowledge.rocket_lon == 0) {
+        return;
+    }
     update_position(gps_knowledge.rocket_lat, gps_knowledge.rocket_lon, gps_knowledge.rocket_alt,
                     gps_knowledge.my_lat, gps_knowledge.my_lon, gps_knowledge.my_alt, 
                     gps_knowledge.my_pitch, gps_knowledge.my_yaw, gps_knowledge.control_mode);
