@@ -290,6 +290,11 @@ void setup() {
     }
     Serial.println("ESP-NOW initialized successfully");
     esp_now_register_recv_cb(on_data_recv);
+
+    // get MAC Address
+    // delay(3000);
+    // Serial.println(WiFi.macAddress());
+    // delay(3000);
 }
 
 
