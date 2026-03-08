@@ -222,8 +222,14 @@ void update_position(double goal_lat, double goal_lon, double goal_alt,
     if(pitch < 0) steps_pitch = 0;
     if(pitch > (M_PI / 2)) steps_pitch = motor_config.step_per_rev[0] * motor_config.microsteps * 0.25;
 
-    motor_config.target_position[0] = steps_pitch;
-    motor_config.target_position[1] = steps_yaw;
+    const double divisor = 4.0;
+    if (mode == 1) {
+        motor_config.target_position[0] = motor_config.real_position[0]+(int)std::round((steps_pitch-motor_config.real_position[0])/divisor);
+        motor_config.target_position[1] = motor_config.real_position[1]+(int)std::round((steps_yaw-motor_config.real_position[1])/divisor);
+    } else {
+        motor_config.target_position[0] = steps_pitch;
+        motor_config.target_position[1] = steps_yaw;
+    }
 }
 
 void setup() {
