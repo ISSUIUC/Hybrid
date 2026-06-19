@@ -56,7 +56,9 @@ struct {
     std::array<float,2> max_speed{50000,50000};
     std::array<float,2> max_accel{100000,100000};
     std::array<float,2> max_decel{50000,50000}; 
-    std::array<int,2> step_per_rev{int(4.125*200),int(4.667*200)};
+    std::array<int,2> step_per_rev{int(10*4.125*200),int(10*4.667*200)};
+    // gear ratios of 4.125 and 4.667
+    // gearbox ratio of 10
     int microsteps = 32;
 } motor_config;
 
